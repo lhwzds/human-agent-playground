@@ -1,0 +1,32 @@
+:root {
+  font-family:
+    'IBM Plex Sans',
+    'Avenir Next',
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #2c1c10;
+  background: #f4ead9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}

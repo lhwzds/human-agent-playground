@@ -1,0 +1,29 @@
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+
+import { createInitialXiangqiGame } from '@human-agent-playground/game-xiangqi'
+
+import { XiangqiBoard } from '../XiangqiBoard'
+
+describe('XiangqiBoard', () => {
+  it('renders pieces and exposes square handlers', async () => {
+    const game = createInitialXiangqiGame()
+    const onSquareClick = vi.fn()
+
+    const { container } = render(
+      <XiangqiBoard
+        board={game.board}
+        selectedSquare="a1"
+        legalTargets={new Set(['a4'])}
+        onSquareClick={onSquareClick}
+      />,
+    )
+
+    const square = container.querySelector('[data-square="a1"]')
+    expect(square).not.toBeNull()
+    expect(square).toHaveAttribute('data-square', 'a1')
+    fireEvent.click(square!)
+    expect(onSquareClick).toHaveBeenCalledWith('a1')
+    expect(screen.getByText('帅')).toBeInTheDocument()
+  })
+})
