@@ -1,16 +1,77 @@
+import { randomUUID } from 'node:crypto'
+
 import express from 'express'
 import cors from 'cors'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 
 import { GameService } from './game-service.js'
+import { createMcpServer } from './mcp/create-mcp-server.js'
 
 export function createApp(service = new GameService()) {
   const app = express()
+  const mcpTransports = new Map<string, StreamableHTTPServerTransport>()
 
   app.use(cors())
   app.use(express.json())
 
   app.get('/health', (_request, response) => {
     response.json({ ok: true })
+  })
+
+  app.all('/mcp', async (request, response) => {
+    try {
+      const headerValue = request.headers['mcp-session-id']
+      const sessionId = Array.isArray(headerValue) ? headerValue[0] : headerValue
+
+      let transport = sessionId ? mcpTransports.get(sessionId) : undefined
+
+      if (!transport) {
+        if (request.method !== 'POST' || !isInitializeRequest(request.body)) {
+          response.status(400).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'Bad Request: No valid session ID provided',
+            },
+            id: null,
+          })
+          return
+        }
+
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (nextSessionId) => {
+            mcpTransports.set(nextSessionId, transport!)
+          },
+        })
+
+        transport.onclose = () => {
+          const activeSessionId = transport?.sessionId
+          if (activeSessionId) {
+            mcpTransports.delete(activeSessionId)
+          }
+        }
+
+        const mcpServer = createMcpServer(service)
+        await mcpServer.connect(transport)
+      }
+
+      await transport.handleRequest(request, response, request.body)
+    } catch (error) {
+      console.error('Failed to handle MCP request:', error)
+
+      if (!response.headersSent) {
+        response.status(500).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32603,
+            message: 'Internal server error',
+          },
+          id: null,
+        })
+      }
+    }
   })
 
   app.get('/api/sessions', async (_request, response, next) => {

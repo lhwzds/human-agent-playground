@@ -3,7 +3,7 @@ import * as z from 'zod/v4'
 
 import type { GameSession } from '@human-agent-playground/core'
 
-import { apiRequest } from '../http-client.js'
+import type { GameService } from '../game-service.js'
 
 function textResult(title: string, payload: unknown) {
   return {
@@ -19,7 +19,7 @@ function textResult(title: string, payload: unknown) {
   }
 }
 
-export function registerXiangqiTools(server: McpServer) {
+export function registerXiangqiTools(server: McpServer, service: GameService) {
   server.registerTool(
     'xiangqi_get_legal_moves',
     {
@@ -35,8 +35,9 @@ export function registerXiangqiTools(server: McpServer) {
       },
     },
     async ({ sessionId, from }) => {
-      const query = from ? `?from=${from}` : ''
-      const moves = await apiRequest(`/api/sessions/${sessionId}/legal-moves${query}`)
+      const moves = {
+        moves: await service.getLegalMoves(sessionId, from ? { from } : undefined),
+      }
       return textResult('Xiangqi legal moves', moves)
     },
   )
@@ -53,10 +54,7 @@ export function registerXiangqiTools(server: McpServer) {
       },
     },
     async ({ sessionId, from, to }) => {
-      const session = await apiRequest<GameSession>(`/api/sessions/${sessionId}/moves`, {
-        method: 'POST',
-        body: JSON.stringify({ from, to }),
-      })
+      const session = await service.playMove(sessionId, { from, to })
       return textResult('Updated Xiangqi game state', session)
     },
   )

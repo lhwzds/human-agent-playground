@@ -3,7 +3,7 @@ import * as z from 'zod/v4'
 
 import type { GameSession } from '@human-agent-playground/core'
 
-import { apiRequest } from '../http-client.js'
+import type { GameService } from '../game-service.js'
 
 function textResult(title: string, payload: unknown) {
   return {
@@ -19,15 +19,15 @@ function textResult(title: string, payload: unknown) {
   }
 }
 
-export function registerPlatformTools(server: McpServer) {
+export function registerPlatformTools(server: McpServer, service: GameService) {
   server.registerTool(
     'list_games',
     {
       description: 'List the game adapters currently exposed by the playground server.',
     },
     async () => {
-      const response = await apiRequest('/api/games')
-      return textResult('Available games', response)
+      const response = await service.listGames()
+      return textResult('Available games', { games: response })
     },
   )
 
@@ -38,7 +38,9 @@ export function registerPlatformTools(server: McpServer) {
         'List active playground sessions. Use this to discover shared human-agent matches and their game ids.',
     },
     async () => {
-      const response = await apiRequest<{ sessions: GameSession[] }>('/api/sessions')
+      const response: { sessions: GameSession[] } = {
+        sessions: await service.listSessions(),
+      }
       return textResult('Active sessions', response)
     },
   )
@@ -57,10 +59,7 @@ export function registerPlatformTools(server: McpServer) {
       },
     },
     async ({ gameId, mode }) => {
-      const session = await apiRequest<GameSession>('/api/sessions', {
-        method: 'POST',
-        body: JSON.stringify({ gameId, mode }),
-      })
+      const session = await service.createSession({ gameId, mode })
       return textResult('Created session', session)
     },
   )
@@ -75,7 +74,7 @@ export function registerPlatformTools(server: McpServer) {
       },
     },
     async ({ sessionId }) => {
-      const session = await apiRequest<GameSession>(`/api/sessions/${sessionId}`)
+      const session = await service.getSession(sessionId)
       return textResult('Current game state', session)
     },
   )
@@ -89,9 +88,7 @@ export function registerPlatformTools(server: McpServer) {
       },
     },
     async ({ sessionId }) => {
-      const session = await apiRequest<GameSession>(`/api/sessions/${sessionId}/reset`, {
-        method: 'POST',
-      })
+      const session = await service.resetSession(sessionId)
       return textResult('Reset session', session)
     },
   )

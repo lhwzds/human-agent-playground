@@ -7,9 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && tsc --noEmit -p tsconfig.json",
     "start": "tsx src/index.ts",
-    "start:mcp": "tsx src/mcp.ts",
     "dev": "tsx watch src/index.ts",
-    "dev:mcp": "tsx watch src/mcp.ts",
     "test": "vitest run"
   },
   "dependencies": {
