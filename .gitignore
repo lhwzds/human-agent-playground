@@ -6,3 +6,5 @@ coverage
 *.tsbuildinfo
 .board-bridge-data
 .human-agent-playground-data
+playwright-report
+test-results
