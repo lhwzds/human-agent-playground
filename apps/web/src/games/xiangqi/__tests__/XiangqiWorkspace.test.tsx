@@ -20,7 +20,6 @@ function createSession(state = createInitialXiangqiGame()): GameSession<XiangqiG
   return {
     id: 'session-1',
     gameId: 'xiangqi',
-    mode: 'human-vs-agent',
     createdAt: '2026-03-07T00:00:00.000Z',
     updatedAt: '2026-03-07T00:00:00.000Z',
     state,

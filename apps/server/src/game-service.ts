@@ -15,9 +15,12 @@ interface PersistedSessions {
   sessions: GameSession[]
 }
 
+type SessionListener = (session: GameSession) => void
+
 export class GameService {
   private readonly dataPath: string
   private readonly sessions = new Map<string, GameSession>()
+  private readonly sessionListeners = new Map<string, Set<SessionListener>>()
   private loadPromise: Promise<void> | null = null
   private persistPromise: Promise<void> = Promise.resolve()
 
@@ -45,7 +48,6 @@ export class GameService {
     const session: GameSession = {
       id: randomUUID(),
       gameId: parsed.gameId,
-      mode: parsed.mode,
       createdAt: timestamp,
       updatedAt: timestamp,
       state: adapter.createInitialState(),
@@ -53,6 +55,7 @@ export class GameService {
 
     this.sessions.set(session.id, session)
     await this.persist()
+    this.emitSessionUpdate(session)
     return session
   }
 
@@ -84,6 +87,7 @@ export class GameService {
 
     this.sessions.set(sessionId, updated)
     await this.persist()
+    this.emitSessionUpdate(updated)
     return updated
   }
 
@@ -98,7 +102,25 @@ export class GameService {
 
     this.sessions.set(sessionId, updated)
     await this.persist()
+    this.emitSessionUpdate(updated)
     return updated
+  }
+
+  subscribeSession(sessionId: string, listener: SessionListener): () => void {
+    let listeners = this.sessionListeners.get(sessionId)
+    if (!listeners) {
+      listeners = new Set()
+      this.sessionListeners.set(sessionId, listeners)
+    }
+
+    listeners.add(listener)
+
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) {
+        this.sessionListeners.delete(sessionId)
+      }
+    }
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -126,16 +148,25 @@ export class GameService {
 
   private normalizeSession(raw: Partial<GameSession> & { game?: string }): GameSession {
     const gameId = raw.gameId ?? raw.game ?? 'xiangqi'
-    const mode = raw.mode ?? 'human-vs-agent'
     const adapter = getGameAdapter(gameId)
 
     return {
       id: raw.id ?? randomUUID(),
       gameId,
-      mode,
       createdAt: raw.createdAt ?? new Date().toISOString(),
       updatedAt: raw.updatedAt ?? new Date().toISOString(),
       state: raw.state ? adapter.normalizeState(raw.state) : adapter.createInitialState(),
+    }
+  }
+
+  private emitSessionUpdate(session: GameSession) {
+    const listeners = this.sessionListeners.get(session.id)
+    if (!listeners) {
+      return
+    }
+
+    for (const listener of listeners) {
+      listener(session)
     }
   }
 

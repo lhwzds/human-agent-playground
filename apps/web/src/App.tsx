@@ -1,11 +1,12 @@
-import type { GameCatalogItem, GameSession, SessionMode } from '@human-agent-playground/core'
+import type { GameCatalogItem, GameSession } from '@human-agent-playground/core'
 import { useEffect, useState } from 'react'
 
 import {
   createSession,
-  listGames,
   getSession,
+  listGames,
   listSessions,
+  openSessionStream,
   resetSession,
 } from './api'
 import './App.css'
@@ -19,11 +20,11 @@ interface BootstrapPayload {
 interface SessionSetupCardProps {
   games: GameCatalogItem[]
   selectedGameId: string
-  selectedMode: SessionMode
   onCreateSession: () => void
   onGameChange: (gameId: string) => void
-  onModeChange: (mode: SessionMode) => void
 }
+
+type LiveSyncState = 'connecting' | 'live' | 'reconnecting' | 'offline'
 
 let bootstrapPromise: Promise<BootstrapPayload> | null = null
 
@@ -37,7 +38,6 @@ function loadBootstrapPayload(): Promise<BootstrapPayload> {
         existing[0] ??
         (await createSession({
           gameId: defaultGameId,
-          mode: 'human-vs-agent',
         }))
 
       return {
@@ -48,6 +48,10 @@ function loadBootstrapPayload(): Promise<BootstrapPayload> {
   }
 
   return bootstrapPromise
+}
+
+export function resetBootstrapCacheForTests() {
+  bootstrapPromise = null
 }
 
 function resolveGameModule(gameId: string | undefined) {
@@ -65,10 +69,8 @@ function resolveGameModule(gameId: string | undefined) {
 function SessionSetupCard({
   games,
   selectedGameId,
-  selectedMode,
   onCreateSession,
   onGameChange,
-  onModeChange,
 }: SessionSetupCardProps) {
   return (
     <div className="panel-card">
@@ -83,17 +85,6 @@ function SessionSetupCard({
           ))}
         </select>
       </label>
-      <label className="field-block">
-        <span>Mode</span>
-        <select
-          value={selectedMode}
-          onChange={(event) => onModeChange(event.target.value as SessionMode)}
-        >
-          <option value="human-vs-agent">human-vs-agent</option>
-          <option value="agent-vs-agent">agent-vs-agent</option>
-          <option value="human-vs-human">human-vs-human</option>
-        </select>
-      </label>
       <button className="primary-button" type="button" onClick={onCreateSession}>
         Create Session
       </button>
@@ -105,7 +96,7 @@ function App() {
   const [games, setGames] = useState<GameCatalogItem[]>([])
   const [session, setSession] = useState<GameSession | null>(null)
   const [selectedGameId, setSelectedGameId] = useState('xiangqi')
-  const [selectedMode, setSelectedMode] = useState<SessionMode>('human-vs-agent')
+  const [syncState, setSyncState] = useState<LiveSyncState>('offline')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -119,7 +110,6 @@ function App() {
         if (!cancelled) {
           setGames(availableGames)
           setSelectedGameId(active.gameId)
-          setSelectedMode(active.mode)
           setSession(active)
         }
       } catch (nextError) {
@@ -142,19 +132,15 @@ function App() {
 
   useEffect(() => {
     if (!session) {
+      setSyncState('offline')
       return
     }
 
-    const timer = window.setInterval(async () => {
-      try {
-        const latest = await getSession(session.id)
-        setSession(latest)
-      } catch {
-        // Ignore polling failures and keep the current board.
-      }
-    }, 2000)
+    const stream = openSessionStream(session.id, setSession, setSyncState)
 
-    return () => window.clearInterval(timer)
+    return () => {
+      stream.close()
+    }
   }, [session?.id])
 
   async function refreshSession(sessionId: string) {
@@ -168,8 +154,8 @@ function App() {
       setError(null)
       const nextSession = await createSession({
         gameId: selectedGameId,
-        mode: selectedMode,
       })
+      setSelectedGameId(nextSession.gameId)
       setSession(nextSession)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Session creation failed')
@@ -187,12 +173,12 @@ function App() {
         <h1>Shared Tabletop Sessions For Humans And Agents</h1>
         <p className="hero-copy">
           One UI, one MCP endpoint, one session store. Games live in isolated folders, while
-          the platform lets humans and agents switch games, switch modes, and operate on the
-          same match state.
+          the platform lets humans and agents operate on the same match state and watch each
+          move land in real time.
         </p>
         <div className="meta-strip">
           <span>Game: {activeGame?.shortName ?? session?.gameId ?? selectedGameId}</span>
-          <span>Mode: {session?.mode ?? selectedMode}</span>
+          <span>Sync: {syncState}</span>
           <span>Turn: {summary?.turn ?? '...'}</span>
           <span>Status: {summary?.status ?? '...'}</span>
           <span>Winner: {summary?.winner ?? 'none'}</span>
@@ -215,10 +201,8 @@ function App() {
               <SessionSetupCard
                 games={games}
                 selectedGameId={selectedGameId}
-                selectedMode={selectedMode}
                 onCreateSession={handleCreateSession}
                 onGameChange={setSelectedGameId}
-                onModeChange={setSelectedMode}
               />
             </aside>
           </>
@@ -233,10 +217,8 @@ function App() {
               <SessionSetupCard
                 games={games}
                 selectedGameId={selectedGameId}
-                selectedMode={selectedMode}
                 onCreateSession={handleCreateSession}
                 onGameChange={setSelectedGameId}
-                onModeChange={setSelectedMode}
               />
               {error && (
                 <div className="panel-card error-card">
@@ -257,10 +239,8 @@ function App() {
               <SessionSetupCard
                 games={games}
                 selectedGameId={selectedGameId}
-                selectedMode={selectedMode}
                 onCreateSession={handleCreateSession}
                 onGameChange={setSelectedGameId}
-                onModeChange={setSelectedMode}
               />
             }
             onSessionUpdate={setSession}

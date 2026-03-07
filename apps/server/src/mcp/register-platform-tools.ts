@@ -48,18 +48,13 @@ export function registerPlatformTools(server: McpServer, service: GameService) {
   server.registerTool(
     'create_session',
     {
-      description:
-        'Create a new session for one game and one mode. Modes support human-vs-agent, agent-vs-agent, and human-vs-human.',
+      description: 'Create a new shared session for one game.',
       inputSchema: {
         gameId: z.string().default('xiangqi').describe('Game id such as xiangqi'),
-        mode: z
-          .enum(['human-vs-agent', 'agent-vs-agent', 'human-vs-human'])
-          .default('human-vs-agent')
-          .describe('Session mode for the new match'),
       },
     },
-    async ({ gameId, mode }) => {
-      const session = await service.createSession({ gameId, mode })
+    async ({ gameId }) => {
+      const session = await service.createSession({ gameId })
       return textResult('Created session', session)
     },
   )
@@ -67,8 +62,7 @@ export function registerPlatformTools(server: McpServer, service: GameService) {
   server.registerTool(
     'get_game_state',
     {
-      description:
-        'Get the current board, turn, mode, move history summary, winner, and status for a session.',
+      description: 'Get the current board, turn, move history summary, winner, and status for a session.',
       inputSchema: {
         sessionId: z.string().uuid().describe('The session id returned by list_sessions or create_session'),
       },

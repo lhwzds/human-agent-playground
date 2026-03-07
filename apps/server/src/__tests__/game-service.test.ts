@@ -11,9 +11,8 @@ describe('GameService', () => {
     const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
     const service = new GameService(join(directory, 'sessions.json'))
 
-    const session = await service.createSession({ gameId: 'xiangqi', mode: 'human-vs-agent' })
+    const session = await service.createSession({ gameId: 'xiangqi' })
     expect(session.state.turn).toBe('red')
-    expect(session.mode).toBe('human-vs-agent')
 
     const moves = await service.getLegalMoves(session.id, 'h3')
     expect(moves.some((move) => move.to === 'h9')).toBe(false)
@@ -27,7 +26,7 @@ describe('GameService', () => {
     const dataPath = join(directory, 'sessions.json')
 
     const service = new GameService(dataPath)
-    const session = await service.createSession({ gameId: 'xiangqi', mode: 'human-vs-agent' })
+    const session = await service.createSession({ gameId: 'xiangqi' })
     await service.playMove(session.id, { from: 'h3', to: 'h9' }).catch(() => null)
 
     const reloaded = new GameService(dataPath)
@@ -43,9 +42,28 @@ describe('GameService', () => {
     const games = await service.listGames()
     expect(games.map((game) => game.id)).toContain('xiangqi')
 
-    const error = await service
-      .createSession({ gameId: 'go', mode: 'human-vs-agent' })
-      .catch((value) => value)
+    const error = await service.createSession({ gameId: 'go' }).catch((value) => value)
     expect(error).toBeInstanceOf(Error)
+  })
+
+  it('notifies session subscribers when a move lands', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    const service = new GameService(join(directory, 'sessions.json'))
+    const session = await service.createSession({ gameId: 'xiangqi' })
+    const events: Array<{ updatedAt: string; lastMove: string | null }> = []
+
+    const unsubscribe = service.subscribeSession(session.id, (updatedSession) => {
+      const state = updatedSession.state as { lastMove?: { from: string; to: string } | null }
+      events.push({
+        updatedAt: updatedSession.updatedAt,
+        lastMove: state.lastMove ? `${state.lastMove.from}-${state.lastMove.to}` : null,
+      })
+    })
+
+    await service.playMove(session.id, { from: 'a4', to: 'a5' })
+    unsubscribe()
+
+    expect(events).toHaveLength(1)
+    expect(events[0].lastMove).toBe('a4-a5')
   })
 })

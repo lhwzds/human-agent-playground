@@ -44,11 +44,6 @@ export function XiangqiWorkspace({
   }, [session.id, session.updatedAt])
 
   async function handleSquareClick(square: Square) {
-    if (session.mode === 'agent-vs-agent') {
-      onError('This session is agent-vs-agent. Drive it through MCP or a future auto-runner.')
-      return
-    }
-
     const { row, col } = squareToCoordinates(square)
     const piece = session.state.board[row][col]
 

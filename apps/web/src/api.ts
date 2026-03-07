@@ -1,4 +1,9 @@
-import type { CreateSessionInput, GameCatalogItem, GameSession } from '@human-agent-playground/core'
+import type {
+  CreateSessionInput,
+  GameCatalogItem,
+  GameSession,
+  SessionStreamEvent,
+} from '@human-agent-playground/core'
 
 const baseUrl = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8787'
 
@@ -34,7 +39,6 @@ export function createSession(input: Partial<CreateSessionInput> = {}): Promise<
     method: 'POST',
     body: JSON.stringify({
       gameId: 'xiangqi',
-      mode: 'human-vs-agent',
       ...input,
     }),
   })
@@ -48,4 +52,32 @@ export function resetSession(sessionId: string): Promise<GameSession> {
   return request(`/api/sessions/${sessionId}/reset`, {
     method: 'POST',
   })
+}
+
+export function openSessionStream(
+  sessionId: string,
+  onSession: (session: GameSession) => void,
+  onStateChange?: (state: 'connecting' | 'live' | 'reconnecting') => void,
+): EventSource {
+  onStateChange?.('connecting')
+
+  const eventSource = new EventSource(
+    new URL(`/api/sessions/${sessionId}/stream`, baseUrl).toString(),
+  )
+
+  eventSource.onopen = () => {
+    onStateChange?.('live')
+  }
+
+  eventSource.onmessage = (event) => {
+    const payload = JSON.parse(event.data) as SessionStreamEvent
+    onSession(payload.session)
+    onStateChange?.('live')
+  }
+
+  eventSource.onerror = () => {
+    onStateChange?.('reconnecting')
+  }
+
+  return eventSource
 }

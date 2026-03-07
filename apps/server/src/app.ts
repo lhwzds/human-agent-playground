@@ -4,6 +4,7 @@ import express from 'express'
 import cors from 'cors'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
+import type { GameSession, SessionStreamEvent } from '@human-agent-playground/core'
 
 import { GameService } from './game-service.js'
 import { createMcpServer } from './mcp/create-mcp-server.js'
@@ -106,6 +107,36 @@ export function createApp(service = new GameService()) {
     }
   })
 
+  app.get('/api/sessions/:sessionId/stream', async (request, response, next) => {
+    try {
+      const session = await service.getSession(request.params.sessionId)
+
+      response.setHeader('Content-Type', 'text/event-stream')
+      response.setHeader('Cache-Control', 'no-cache, no-transform')
+      response.setHeader('Connection', 'keep-alive')
+      response.setHeader('X-Accel-Buffering', 'no')
+      response.flushHeaders()
+
+      writeSessionEvent(response, session)
+
+      const unsubscribe = service.subscribeSession(request.params.sessionId, (updatedSession) => {
+        writeSessionEvent(response, updatedSession)
+      })
+
+      const keepAlive = setInterval(() => {
+        response.write(': keepalive\n\n')
+      }, 15_000)
+
+      request.on('close', () => {
+        clearInterval(keepAlive)
+        unsubscribe()
+        response.end()
+      })
+    } catch (error) {
+      next(error)
+    }
+  })
+
   app.get('/api/sessions/:sessionId/legal-moves', async (request, response, next) => {
     try {
       response.json({
@@ -140,4 +171,9 @@ export function createApp(service = new GameService()) {
   })
 
   return app
+}
+
+function writeSessionEvent(response: express.Response, session: GameSession) {
+  const payload: SessionStreamEvent = { session }
+  response.write(`data: ${JSON.stringify(payload)}\n\n`)
 }

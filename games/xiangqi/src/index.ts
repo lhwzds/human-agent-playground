@@ -9,7 +9,4 @@ export const xiangqiGameCatalogItem: GameCatalogItem = {
   shortName: 'Xiangqi',
   description:
     'A 9x10 perfect-information board game with palace, river, cannon, and horse-leg rules.',
-  supportsHumanVsHuman: true,
-  supportsHumanVsAgent: true,
-  supportsAgentVsAgent: true,
 }
