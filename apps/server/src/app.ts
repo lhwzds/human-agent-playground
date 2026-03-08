@@ -157,7 +157,7 @@ export function createApp(service = new GameService()) {
 
   app.post('/api/sessions/:sessionId/reset', async (request, response, next) => {
     try {
-      response.json(await service.resetSession(request.params.sessionId))
+      response.json(await service.resetSession(request.params.sessionId, request.body))
     } catch (error) {
       next(error)
     }

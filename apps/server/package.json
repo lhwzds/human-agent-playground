@@ -8,7 +8,7 @@
     "check": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && tsc --noEmit -p tsconfig.json",
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
-    "test": "vitest run"
+    "test": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && vitest run"
   },
   "dependencies": {
     "@human-agent-playground/core": "file:../../packages/core",

@@ -13,6 +13,8 @@ describe('GameService', () => {
 
     const session = await service.createSession({ gameId: 'xiangqi' })
     expect(session.state.turn).toBe('red')
+    expect(session.events).toHaveLength(1)
+    expect(session.events[0].kind).toBe('session_created')
 
     const moves = await service.getLegalMoves(session.id, 'h3')
     expect(moves.some((move) => move.to === 'h9')).toBe(false)
@@ -65,5 +67,72 @@ describe('GameService', () => {
 
     expect(events).toHaveLength(1)
     expect(events[0].lastMove).toBe('a4-a5')
+  })
+
+  it('records reasoning summaries in the session timeline', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    const service = new GameService(join(directory, 'sessions.json'))
+    const session = await service.createSession({ gameId: 'xiangqi' })
+
+    const updated = await service.playMove(session.id, {
+      from: 'a4',
+      to: 'a5',
+      actorKind: 'agent',
+      channel: 'mcp',
+      reasoning: {
+        summary: 'Advance the pawn to contest the file and gain space.',
+        reasoningSteps: [
+          'Compared the center advance with horse development.',
+          'Preferred immediate space gain on the open file.',
+        ],
+        consideredAlternatives: [
+          {
+            action: 'b1 -> c3',
+            summary: 'Develop the horse first.',
+            rejectedBecause: 'It delayed immediate file pressure.',
+          },
+        ],
+        confidence: 0.74,
+      },
+    })
+
+    expect(updated.events).toHaveLength(2)
+    expect(updated.events[1]).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+        actorKind: 'agent',
+        channel: 'mcp',
+        reasoning: expect.objectContaining({
+          summary: 'Advance the pawn to contest the file and gain space.',
+          confidence: 0.74,
+        }),
+      }),
+    )
+  })
+
+  it('waits until the expected turn arrives without polling outside the service', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    const service = new GameService(join(directory, 'sessions.json'))
+    const session = await service.createSession({ gameId: 'xiangqi' })
+    const lastEventId = session.events.at(-1)?.id
+
+    const waitPromise = service.waitForTurn(session.id, 'black', {
+      afterEventId: lastEventId,
+      timeoutMs: 5_000,
+    })
+
+    setTimeout(() => {
+      void service.playMove(session.id, { from: 'a4', to: 'a5' })
+    }, 20)
+
+    const result = await waitPromise
+
+    expect(result.status).toBe('ready')
+    expect(result.session.state.turn).toBe('black')
+    expect(result.event).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+      }),
+    )
   })
 })

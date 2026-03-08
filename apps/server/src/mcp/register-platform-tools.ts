@@ -111,7 +111,11 @@ export function createPlatformToolCatalog(
       },
       handler: async (input) => {
         const { gameId } = z.object({ gameId: z.string().default('xiangqi') }).parse(input ?? {})
-        const session = await service.createSession({ gameId })
+        const session = await service.createSession({
+          gameId,
+          actorKind: 'agent',
+          channel: 'mcp',
+        })
         return textResult('Created session', session)
       },
     },
@@ -138,6 +142,54 @@ export function createPlatformToolCatalog(
       },
     },
     {
+      name: 'wait_for_turn',
+      title: 'Wait For Turn',
+      description:
+        'Wait until a session advances and it becomes the expected side’s turn, or until the game finishes or the timeout expires.',
+      category: 'session',
+      tags: ['platform', 'sessions', 'wait', 'turn'],
+      inputSchema: {
+        sessionId: z.string().uuid().describe('The session id to watch'),
+        expectedTurn: z.string().min(1).describe('The turn value to wait for, such as red or black'),
+        afterEventId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Optional last-seen event id; when provided, the session must advance past it before returning ready'),
+        timeoutMs: z
+          .number()
+          .int()
+          .min(1_000)
+          .max(300_000)
+          .default(60_000)
+          .describe('Maximum time to wait before returning timeout'),
+      },
+      annotations: {
+        title: 'Wait For Turn',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+      handler: async (input) => {
+        const parsed = z
+          .object({
+            sessionId: z.string().uuid(),
+            expectedTurn: z.string().min(1),
+            afterEventId: z.string().min(1).optional(),
+            timeoutMs: z.number().int().min(1_000).max(300_000).default(60_000),
+          })
+          .parse(input)
+
+        const result = await service.waitForTurn(parsed.sessionId, parsed.expectedTurn, {
+          afterEventId: parsed.afterEventId,
+          timeoutMs: parsed.timeoutMs,
+        })
+
+        return textResult('Wait for turn result', result)
+      },
+    },
+    {
       name: 'reset_session',
       title: 'Reset Session',
       description: 'Reset a session back to that game’s default opening position.',
@@ -155,7 +207,10 @@ export function createPlatformToolCatalog(
       },
       handler: async (input) => {
         const { sessionId } = z.object({ sessionId: z.string().uuid() }).parse(input)
-        const session = await service.resetSession(sessionId)
+        const session = await service.resetSession(sessionId, {
+          actorKind: 'agent',
+          channel: 'mcp',
+        })
         return textResult('Reset session', session)
       },
     },

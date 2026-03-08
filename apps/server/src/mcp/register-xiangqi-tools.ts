@@ -57,6 +57,24 @@ export function createXiangqiToolCatalog(service: GameService): ToolCatalogEntry
         sessionId: z.string().uuid().describe('The Xiangqi session id to update'),
         from: z.string().regex(/^[a-i](10|[1-9])$/).describe('Source square'),
         to: z.string().regex(/^[a-i](10|[1-9])$/).describe('Target square'),
+        reasoning: z
+          .object({
+            summary: z.string().min(1).describe('A concise summary of the reasoning process'),
+            reasoningSteps: z.array(z.string()).optional().describe('Short reasoning steps shown in the timeline'),
+            consideredAlternatives: z
+              .array(
+                z.object({
+                  action: z.string().min(1),
+                  summary: z.string().min(1),
+                  rejectedBecause: z.string().min(1).optional(),
+                }),
+              )
+              .optional()
+              .describe('Optional alternatives considered before the final move'),
+            confidence: z.number().min(0).max(1).nullable().optional().describe('Optional confidence score'),
+          })
+          .optional()
+          .describe('Optional reasoning summary shown in the shared timeline'),
       },
       annotations: {
         title: 'Play Xiangqi Move',
@@ -66,15 +84,37 @@ export function createXiangqiToolCatalog(service: GameService): ToolCatalogEntry
         openWorldHint: false,
       },
       handler: async (input) => {
-        const { sessionId, from, to } = z
+        const { sessionId, from, to, reasoning } = z
           .object({
             sessionId: z.string().uuid(),
             from: z.string().regex(/^[a-i](10|[1-9])$/),
             to: z.string().regex(/^[a-i](10|[1-9])$/),
+            reasoning: z
+              .object({
+                summary: z.string().min(1),
+                reasoningSteps: z.array(z.string()).optional(),
+                consideredAlternatives: z
+                  .array(
+                    z.object({
+                      action: z.string().min(1),
+                      summary: z.string().min(1),
+                      rejectedBecause: z.string().min(1).optional(),
+                    }),
+                  )
+                  .optional(),
+                confidence: z.number().min(0).max(1).nullable().optional(),
+              })
+              .optional(),
           })
           .parse(input)
 
-        const session = await service.playMove(sessionId, { from, to })
+        const session = await service.playMove(sessionId, {
+          from,
+          to,
+          actorKind: 'agent',
+          channel: 'mcp',
+          reasoning,
+        })
         return textResult('Updated Xiangqi game state', session)
       },
     },

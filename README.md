@@ -98,6 +98,7 @@ Current MCP tools:
 - `search_tools`
 - `create_session`
 - `get_game_state`
+- `wait_for_turn`
 - `xiangqi_get_legal_moves`
 - `xiangqi_play_move`
 - `reset_session`
@@ -112,6 +113,35 @@ Recommended tool order:
 4. `get_game_state`
 5. `xiangqi_get_legal_moves`
 6. `xiangqi_play_move`
+
+## Turn-Based Shared Play Without External Polling
+
+`wait_for_turn` is a blocking MCP tool for turn-based shared play.
+
+Use it when one side is controlled by a human in the UI and the other side is controlled by an agent in one long-running MCP session.
+
+Recommended flow:
+
+1. Call `get_game_state`.
+2. Read the latest `session.events` entry and keep its `id` as `afterEventId`.
+3. If it is not the agent's turn yet, call `wait_for_turn` with:
+   - `sessionId`
+   - `expectedTurn`
+   - `afterEventId`
+   - `timeoutMs`
+4. When `wait_for_turn` returns `status: "ready"`, call `get_game_state` again.
+5. Inspect legal moves with `xiangqi_get_legal_moves`.
+6. Play exactly one move with `xiangqi_play_move`.
+7. Repeat the same pattern in the same long-running agent run.
+
+Notes:
+
+- `wait_for_turn` waits inside the MCP server. It is meant to replace client-side `sleep` loops.
+- This pattern works best in hosts that allow one reply or one task to keep running while it repeatedly calls MCP tools.
+- The tool may return:
+  - `ready`: the expected side may move now
+  - `finished`: the game ended while waiting
+  - `timeout`: no matching turn arrived before the timeout
 
 ## Repo Layout
 

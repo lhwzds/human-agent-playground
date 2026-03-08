@@ -85,6 +85,7 @@ describe('Streamable HTTP MCP server', () => {
         'search_tools',
         'create_session',
         'get_game_state',
+        'wait_for_turn',
         'reset_session',
         'xiangqi_get_legal_moves',
         'xiangqi_play_move',
@@ -135,10 +136,22 @@ describe('Streamable HTTP MCP server', () => {
       }),
     ) as {
       id: string
+      events: Array<{ id: string }>
       state: { turn: string }
     }
 
     expect(created.state.turn).toBe('red')
+
+    const lastEventId = created.events.at(-1)?.id
+    const waitPromise = client.callTool({
+      name: 'wait_for_turn',
+      arguments: {
+        sessionId: created.id,
+        expectedTurn: 'black',
+        afterEventId: lastEventId,
+        timeoutMs: 5_000,
+      },
+    })
 
     const legalMoves = extractPayload(
       await client.callTool({
@@ -175,6 +188,26 @@ describe('Streamable HTTP MCP server', () => {
       expect.objectContaining({
         from: 'a4',
         to: 'a5',
+      }),
+    )
+
+    const waitResult = extractPayload(await waitPromise) as {
+      status: string
+      session: {
+        state: {
+          turn: string
+        }
+      }
+      event: {
+        kind: string
+      } | null
+    }
+
+    expect(waitResult.status).toBe('ready')
+    expect(waitResult.session.state.turn).toBe('black')
+    expect(waitResult.event).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
       }),
     )
 

@@ -98,6 +98,7 @@ MCP 端点：
 - `search_tools`
 - `create_session`
 - `get_game_state`
+- `wait_for_turn`
 - `xiangqi_get_legal_moves`
 - `xiangqi_play_move`
 - `reset_session`
@@ -112,6 +113,37 @@ MCP 端点：
 4. `get_game_state`
 5. `xiangqi_get_legal_moves`
 6. `xiangqi_play_move`
+
+## 不依赖外部轮询的轮流对局
+
+`wait_for_turn` 是一个阻塞式 MCP 工具，专门用来支持这种模式：
+
+- 人类在 UI 中下棋
+- Agent 在同一个长时间运行的 MCP 会话里等待自己的回合
+- 不需要客户端自己写 `sleep` 轮询
+
+推荐流程：
+
+1. 先调用 `get_game_state`。
+2. 读取最新一条 `session.events`，把它的 `id` 记成 `afterEventId`。
+3. 如果现在还没轮到 agent，就调用 `wait_for_turn`，传入：
+   - `sessionId`
+   - `expectedTurn`
+   - `afterEventId`
+   - `timeoutMs`
+4. 当 `wait_for_turn` 返回 `status: "ready"` 后，再调用一次 `get_game_state`。
+5. 用 `xiangqi_get_legal_moves` 检查当前合法走法。
+6. 用 `xiangqi_play_move` 精确地下 1 步。
+7. 在同一个长时间运行的 agent 任务里重复这个流程。
+
+说明：
+
+- `wait_for_turn` 的等待发生在 MCP server 内部，目的是替代客户端侧的 `sleep` 循环。
+- 这种模式最适合能够让单个回复或单个任务持续运行并连续调用 MCP 工具的 agent 宿主。
+- 这个工具可能返回三种结果：
+  - `ready`：已经轮到指定一方
+  - `finished`：等待过程中对局结束
+  - `timeout`：在超时前没有等到目标回合
 
 ## 仓库结构
 

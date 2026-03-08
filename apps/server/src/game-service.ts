@@ -5,8 +5,11 @@ import { dirname, resolve } from 'node:path'
 import {
   createSessionInputSchema,
   type CreateSessionInput,
+  type DecisionExplanation,
   type GameCatalogItem,
   type GameSession,
+  sessionEventSchema,
+  type SessionEvent,
 } from '@human-agent-playground/core'
 
 import { getGameAdapter, listGameCatalog } from './game-registry.js'
@@ -16,6 +19,36 @@ interface PersistedSessions {
 }
 
 type SessionListener = (session: GameSession) => void
+
+interface SessionActorContext {
+  actorKind: 'human' | 'agent' | 'system' | 'unknown'
+  channel: 'ui' | 'mcp' | 'http' | 'system'
+  actorName?: string
+}
+
+interface MoveEventPayload {
+  actorKind?: SessionActorContext['actorKind']
+  channel?: SessionActorContext['channel']
+  actorName?: string
+  reasoning?: DecisionExplanation
+}
+
+interface WaitForTurnOptions {
+  afterEventId?: string
+  timeoutMs?: number
+}
+
+interface WaitForTurnResult {
+  status: 'ready' | 'finished' | 'timeout'
+  session: GameSession
+  event: SessionEvent | null
+}
+
+interface PendingWaitForTurnResult {
+  status: WaitForTurnResult['status'] | null
+  session: GameSession
+  event: SessionEvent | null
+}
 
 export class GameService {
   private readonly dataPath: string
@@ -45,12 +78,24 @@ export class GameService {
     const adapter = getGameAdapter(parsed.gameId)
 
     const timestamp = new Date().toISOString()
+    const actor = resolveActorContext(parsed, {
+      actorKind: 'system',
+      channel: 'system',
+    })
     const session: GameSession = {
       id: randomUUID(),
       gameId: parsed.gameId,
       createdAt: timestamp,
       updatedAt: timestamp,
       state: adapter.createInitialState(),
+      events: [
+        createSessionEvent({
+          timestamp,
+          gameId: parsed.gameId,
+          actor,
+          gameTitle: adapter.game.shortName,
+        }),
+      ],
     }
 
     this.sessions.set(session.id, session)
@@ -77,12 +122,28 @@ export class GameService {
   async playMove(sessionId: string, input: unknown): Promise<GameSession> {
     const session = await this.getSession(sessionId)
     const adapter = getGameAdapter(session.gameId)
+    const actor = resolveActorContext(input, {
+      actorKind: 'unknown',
+      channel: 'http',
+    })
+    const reasoning = parseDecisionExplanation(input)
 
     const nextState = adapter.playMove(session.state, input)
+    const moveDetails = parseMoveEventDetails(nextState)
+    const timestamp = new Date().toISOString()
     const updated: GameSession = {
       ...session,
-      updatedAt: new Date().toISOString(),
+      updatedAt: timestamp,
       state: nextState,
+      events: [
+        ...session.events,
+        createMovePlayedEvent({
+          timestamp,
+          actor,
+          reasoning,
+          details: moveDetails,
+        }),
+      ],
     }
 
     this.sessions.set(sessionId, updated)
@@ -91,19 +152,69 @@ export class GameService {
     return updated
   }
 
-  async resetSession(sessionId: string): Promise<GameSession> {
+  async resetSession(sessionId: string, input?: unknown): Promise<GameSession> {
     const session = await this.getSession(sessionId)
     const adapter = getGameAdapter(session.gameId)
+    const actor = resolveActorContext(input, {
+      actorKind: 'unknown',
+      channel: 'http',
+    })
+    const timestamp = new Date().toISOString()
     const updated: GameSession = {
       ...session,
-      updatedAt: new Date().toISOString(),
+      updatedAt: timestamp,
       state: adapter.createInitialState(),
+      events: [
+        ...session.events,
+        createSessionResetEvent({
+          timestamp,
+          actor,
+          gameTitle: adapter.game.shortName,
+        }),
+      ],
     }
 
     this.sessions.set(sessionId, updated)
     await this.persist()
     this.emitSessionUpdate(updated)
     return updated
+  }
+
+  async waitForTurn(
+    sessionId: string,
+    expectedTurn: string,
+    options: WaitForTurnOptions = {},
+  ): Promise<WaitForTurnResult> {
+    const timeoutMs = options.timeoutMs ?? 60_000
+    let latestSession = await this.getSession(sessionId)
+    const initialResult = resolveWaitForTurnResult(latestSession, expectedTurn, options.afterEventId)
+
+    if (isResolvedWaitForTurnResult(initialResult)) {
+      return initialResult
+    }
+
+    return await new Promise<WaitForTurnResult>((resolve) => {
+      const unsubscribe = this.subscribeSession(sessionId, (session) => {
+        latestSession = session
+        const nextResult = resolveWaitForTurnResult(session, expectedTurn, options.afterEventId)
+        if (!isResolvedWaitForTurnResult(nextResult)) {
+          return
+        }
+
+        clearTimeout(timeoutHandle)
+        unsubscribe()
+        resolve(nextResult)
+      })
+
+      const timeoutHandle = setTimeout(() => {
+        unsubscribe()
+        resolve({
+          status: 'timeout',
+          session: latestSession,
+          event: getLatestSessionEvent(latestSession),
+        })
+      }, timeoutMs)
+    })
   }
 
   subscribeSession(sessionId: string, listener: SessionListener): () => void {
@@ -149,13 +260,28 @@ export class GameService {
   private normalizeSession(raw: Partial<GameSession> & { game?: string }): GameSession {
     const gameId = raw.gameId ?? raw.game ?? 'xiangqi'
     const adapter = getGameAdapter(gameId)
+    const createdAt = raw.createdAt ?? new Date().toISOString()
+    const normalizedEvents =
+      raw.events?.map((event) => sessionEventSchema.parse(event)) ??
+      [
+        createSessionEvent({
+          timestamp: createdAt,
+          actor: {
+            actorKind: 'system',
+            channel: 'system',
+          },
+          gameId,
+          gameTitle: adapter.game.shortName,
+        }),
+      ]
 
     return {
       id: raw.id ?? randomUUID(),
       gameId,
-      createdAt: raw.createdAt ?? new Date().toISOString(),
+      createdAt,
       updatedAt: raw.updatedAt ?? new Date().toISOString(),
       state: raw.state ? adapter.normalizeState(raw.state) : adapter.createInitialState(),
+      events: normalizedEvents,
     }
   }
 
@@ -180,6 +306,233 @@ export class GameService {
     })
 
     await this.persistPromise
+  }
+}
+
+function createSessionEvent({
+  timestamp,
+  actor,
+  gameId,
+  gameTitle,
+}: {
+  timestamp: string
+  actor: SessionActorContext
+  gameId: string
+  gameTitle: string
+}): SessionEvent {
+  return {
+    id: randomUUID(),
+    kind: 'session_created',
+    createdAt: timestamp,
+    actorKind: actor.actorKind,
+    channel: actor.channel,
+    actorName: actor.actorName,
+    summary: `Created a new ${gameTitle} session.`,
+    details: {
+      gameId,
+    },
+  }
+}
+
+function createMovePlayedEvent({
+  timestamp,
+  actor,
+  reasoning,
+  details,
+}: {
+  timestamp: string
+  actor: SessionActorContext
+  reasoning?: DecisionExplanation
+  details: Record<string, unknown>
+}): SessionEvent {
+  const from = typeof details.from === 'string' ? details.from : 'unknown'
+  const to = typeof details.to === 'string' ? details.to : 'unknown'
+  const side = typeof details.side === 'string' ? details.side : 'Unknown'
+
+  return {
+    id: randomUUID(),
+    kind: 'move_played',
+    createdAt: timestamp,
+    actorKind: actor.actorKind,
+    channel: actor.channel,
+    actorName: actor.actorName,
+    summary: `${side} played ${from} -> ${to}.`,
+    reasoning,
+    details,
+  }
+}
+
+function createSessionResetEvent({
+  timestamp,
+  actor,
+  gameTitle,
+}: {
+  timestamp: string
+  actor: SessionActorContext
+  gameTitle: string
+}): SessionEvent {
+  return {
+    id: randomUUID(),
+    kind: 'session_reset',
+    createdAt: timestamp,
+    actorKind: actor.actorKind,
+    channel: actor.channel,
+    actorName: actor.actorName,
+    summary: `Reset the ${gameTitle} session to the opening position.`,
+    details: {},
+  }
+}
+
+function resolveWaitForTurnResult(
+  session: GameSession,
+  expectedTurn: string,
+  afterEventId?: string,
+): PendingWaitForTurnResult {
+  const latestEvent = getLatestSessionEvent(session)
+  const turn = readSessionTurn(session)
+  const status = readSessionStatus(session)
+  const hasAdvanced = !afterEventId || latestEvent?.id !== afterEventId
+
+  if (status === 'finished') {
+    return {
+      status: 'finished',
+      session,
+      event: latestEvent,
+    }
+  }
+
+  if (turn === expectedTurn && hasAdvanced) {
+    return {
+      status: 'ready',
+      session,
+      event: latestEvent,
+    }
+  }
+
+  return {
+    status: null,
+    session,
+    event: latestEvent,
+  }
+}
+
+function isResolvedWaitForTurnResult(
+  result: PendingWaitForTurnResult,
+): result is WaitForTurnResult {
+  return result.status !== null
+}
+
+function getLatestSessionEvent(session: GameSession) {
+  return session.events.at(-1) ?? null
+}
+
+function readSessionTurn(session: GameSession) {
+  const state = session.state as { turn?: unknown }
+  return typeof state.turn === 'string' ? state.turn : null
+}
+
+function readSessionStatus(session: GameSession) {
+  const state = session.state as { status?: unknown }
+  return typeof state.status === 'string' ? state.status : null
+}
+
+function resolveActorContext(
+  input: unknown,
+  fallback: SessionActorContext,
+): SessionActorContext {
+  if (!input || typeof input !== 'object') {
+    return fallback
+  }
+
+  const value = input as Partial<SessionActorContext>
+  return {
+    actorKind: value.actorKind ?? fallback.actorKind,
+    channel: value.channel ?? fallback.channel,
+    actorName: value.actorName,
+  }
+}
+
+function parseDecisionExplanation(input: unknown): DecisionExplanation | undefined {
+  if (!input || typeof input !== 'object' || !('reasoning' in input)) {
+    return undefined
+  }
+
+  const value = (input as { reasoning?: unknown }).reasoning
+  if (value === undefined || value === null) {
+    return undefined
+  }
+
+  if (typeof value !== 'object') {
+    throw new Error('Invalid reasoning payload')
+  }
+
+  const summary = (value as { summary?: unknown }).summary
+  if (typeof summary !== 'string' || summary.trim().length === 0) {
+    throw new Error('Reasoning summary is required when reasoning is provided')
+  }
+
+  const reasoningStepsRaw = (value as { reasoningSteps?: unknown }).reasoningSteps
+  const consideredAlternativesRaw = (value as { consideredAlternatives?: unknown }).consideredAlternatives
+  const confidenceRaw = (value as { confidence?: unknown }).confidence
+
+  return {
+    summary,
+    reasoningSteps: Array.isArray(reasoningStepsRaw)
+      ? reasoningStepsRaw.filter((step): step is string => typeof step === 'string' && step.trim().length > 0)
+      : [],
+    consideredAlternatives: Array.isArray(consideredAlternativesRaw)
+      ? consideredAlternativesRaw
+          .filter(
+            (alternative): alternative is {
+              action: string
+              summary: string
+              rejectedBecause?: string
+            } =>
+              typeof alternative === 'object' &&
+              alternative !== null &&
+              typeof (alternative as { action?: unknown }).action === 'string' &&
+              typeof (alternative as { summary?: unknown }).summary === 'string' &&
+              (((alternative as { rejectedBecause?: unknown }).rejectedBecause === undefined) ||
+                typeof (alternative as { rejectedBecause?: unknown }).rejectedBecause === 'string'),
+          )
+          .map((alternative) => ({
+            action: alternative.action,
+            summary: alternative.summary,
+            rejectedBecause: alternative.rejectedBecause,
+          }))
+      : [],
+    confidence:
+      confidenceRaw === null
+        ? null
+        : typeof confidenceRaw === 'number' && confidenceRaw >= 0 && confidenceRaw <= 1
+          ? confidenceRaw
+          : undefined,
+  }
+}
+
+function parseMoveEventDetails(state: unknown): Record<string, unknown> {
+  if (
+    !state ||
+    typeof state !== 'object' ||
+    !('lastMove' in state) ||
+    typeof (state as { lastMove?: unknown }).lastMove !== 'object' ||
+    (state as { lastMove?: unknown }).lastMove === null
+  ) {
+    return {}
+  }
+
+  const move = (state as { lastMove: { [key: string]: unknown } }).lastMove
+  return {
+    from: move.from,
+    to: move.to,
+    side: move.side,
+    notation: move.notation,
+    pieceDisplay:
+      typeof move.piece === 'object' && move.piece !== null ? (move.piece as { display?: unknown }).display : undefined,
+    capturedDisplay:
+      typeof move.captured === 'object' && move.captured !== null
+        ? (move.captured as { display?: unknown }).display
+        : null,
   }
 }
 

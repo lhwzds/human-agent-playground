@@ -23,9 +23,10 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 4. Use `list_sessions` to discover an existing shared session when a human is already using the UI.
 5. If no suitable session exists, call `create_session` with `gameId: "xiangqi"`.
 6. Use `get_game_state` before making decisions.
-7. Use `xiangqi_get_legal_moves` before every move. Provide `from` when you want to inspect one piece.
-8. Choose a move from the returned legal move set and call `xiangqi_play_move`.
-9. Re-check `get_game_state` after the move when you need confirmation or a summary.
+7. If the task is turn-based shared play, use `wait_for_turn` instead of client-side sleep loops.
+8. Use `xiangqi_get_legal_moves` before every move. Provide `from` when you want to inspect one piece.
+9. Choose a move from the returned legal move set and call `xiangqi_play_move`.
+10. Re-check `get_game_state` after the move when you need confirmation or a summary.
 
 ## Tool guide
 
@@ -34,6 +35,7 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 - `search_tools`: search tool metadata by query, category, game id, or tags
 - `create_session`: create a new session for one game
 - `get_game_state`: read board state, turn, winner, last move, and history summary
+- `wait_for_turn`: block inside the MCP server until the session advances to the expected turn
 - `xiangqi_get_legal_moves`: inspect legal Xiangqi moves
 - `xiangqi_play_move`: play one legal Xiangqi move
 - `reset_session`: reset a session to the default opening position
@@ -45,6 +47,7 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 - Treat the web UI and MCP as two views over the same session, not as separate games.
 - The web UI updates live after MCP moves, so a human can watch the same board while the agent plays.
 - Prefer `search_tools` before guessing tool names on servers that expose many game-specific tools.
+- In turn-based shared play, prefer `wait_for_turn` over client-side `sleep` polling.
 
 ## Guardrails
 
@@ -60,8 +63,10 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 1. Call `list_sessions`.
 2. Pick the Xiangqi session the user is referring to.
 3. Call `get_game_state`.
-4. Call `xiangqi_get_legal_moves`.
-5. Play exactly one move with `xiangqi_play_move`.
+4. If it is not your turn, store the latest event id and call `wait_for_turn`.
+5. When `wait_for_turn` returns `ready`, call `get_game_state` again.
+6. Call `xiangqi_get_legal_moves`.
+7. Play exactly one move with `xiangqi_play_move`.
 
 ### Start a fresh session
 
@@ -69,3 +74,19 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 2. Share the returned `sessionId`.
 3. Call `get_game_state`.
 4. Begin normal move inspection and play.
+
+### Long-running turn loop in one agent run
+
+Use this pattern when the host can keep one task or one reply alive for repeated MCP calls:
+
+1. Call `get_game_state`.
+2. Read the latest `session.events` item and save its `id` as `afterEventId`.
+3. If the current turn is not the agent's side, call `wait_for_turn`.
+4. When `wait_for_turn` returns:
+   - `ready`: continue and make one move
+   - `finished`: stop
+   - `timeout`: decide whether to stop or wait again
+5. Re-read `get_game_state`.
+6. Call `xiangqi_get_legal_moves`.
+7. Play exactly one move with `xiangqi_play_move`.
+8. Repeat only while the host still allows the same task to continue running.
