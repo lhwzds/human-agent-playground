@@ -57,7 +57,7 @@ Override with:
 2. Open the UI and click `Create Session`.
 3. Select a piece to inspect legal moves.
 4. Click a highlighted square to play.
-5. Watch the side panel for turn, last move, and activity.
+5. Watch the board and message feed update live.
 
 ## Human + Agent Shared Play
 
@@ -114,6 +114,25 @@ Recommended tool order:
 5. `xiangqi_get_legal_moves`
 6. `xiangqi_play_move`
 
+## Agent Move Rules
+
+When an agent plays through MCP, use this sequence for every move:
+
+1. Read `get_game_state`.
+2. If it is not your turn, call `wait_for_turn` once and stop waiting as soon as it returns `ready`.
+3. Re-read `get_game_state` after `ready`.
+4. Use `xiangqi_get_legal_moves` as the source of truth for legality.
+5. Call `xiangqi_play_move` with exactly one move and a fresh reasoning object for that exact position.
+
+Reasoning rules for `xiangqi_play_move`:
+
+- `reasoning.summary` must describe why this move was chosen now.
+- `reasoning.reasoningSteps` must contain at least one short step about the current position.
+- The server stores this reasoning but does not invent it for you.
+- Do not reuse stock explanations.
+- Do not include a multi-move plan as if it were already decided.
+- Do not call `wait_for_turn` again before you either move once or decide to stop.
+
 ## Turn-Based Shared Play Without External Polling
 
 `wait_for_turn` is a blocking MCP tool for turn-based shared play.
@@ -131,7 +150,7 @@ Recommended flow:
    - `timeoutMs`
 4. When `wait_for_turn` returns `status: "ready"`, call `get_game_state` again.
 5. Inspect legal moves with `xiangqi_get_legal_moves`.
-6. Play exactly one move with `xiangqi_play_move`.
+6. Play exactly one move with `xiangqi_play_move`, including fresh move-specific reasoning.
 7. Repeat the same pattern in the same long-running agent run.
 
 Notes:

@@ -174,6 +174,11 @@ describe('Streamable HTTP MCP server', () => {
           sessionId: created.id,
           from: 'a4',
           to: 'a5',
+          reasoning: {
+            summary: 'Advance the pawn to claim space on the file.',
+            reasoningSteps: ['The pawn push is legal and immediately improves board presence.'],
+            confidence: 0.68,
+          },
         },
       }),
     ) as {
@@ -181,6 +186,12 @@ describe('Streamable HTTP MCP server', () => {
         turn: string
         lastMove: { from: string; to: string }
       }
+      events: Array<{
+        reasoning?: {
+          summary: string
+          reasoningSteps: string[]
+        }
+      }>
     }
 
     expect(updated.state.turn).toBe('black')
@@ -188,6 +199,12 @@ describe('Streamable HTTP MCP server', () => {
       expect.objectContaining({
         from: 'a4',
         to: 'a5',
+      }),
+    )
+    expect(updated.events.at(-1)?.reasoning).toEqual(
+      expect.objectContaining({
+        summary: 'Advance the pawn to claim space on the file.',
+        reasoningSteps: ['The pawn push is legal and immediately improves board presence.'],
       }),
     )
 

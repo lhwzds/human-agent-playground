@@ -145,7 +145,7 @@ export function createPlatformToolCatalog(
       name: 'wait_for_turn',
       title: 'Wait For Turn',
       description:
-        'Wait until a session advances and it becomes the expected side’s turn, or until the game finishes or the timeout expires.',
+        'Wait until a session advances and it becomes the expected side’s turn, or until the game finishes or the timeout expires. When this returns ready, stop waiting, re-read the latest state, and play exactly one move before waiting again.',
       category: 'session',
       tags: ['platform', 'sessions', 'wait', 'turn'],
       inputSchema: {
@@ -155,7 +155,9 @@ export function createPlatformToolCatalog(
           .string()
           .min(1)
           .optional()
-          .describe('Optional last-seen event id; when provided, the session must advance past it before returning ready'),
+          .describe(
+            'Optional last-seen event id. Use the latest session event id so the tool only returns after a newer move or reset arrives.',
+          ),
         timeoutMs: z
           .number()
           .int()
@@ -186,7 +188,10 @@ export function createPlatformToolCatalog(
           timeoutMs: parsed.timeoutMs,
         })
 
-        return textResult('Wait for turn result', result)
+        return textResult(
+          'Wait for turn result. If the status is ready, fetch the current state now and play exactly one move before waiting again.',
+          result,
+        )
       },
     },
     {

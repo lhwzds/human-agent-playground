@@ -9,7 +9,7 @@ export function createXiangqiToolCatalog(service: GameService): ToolCatalogEntry
       name: 'xiangqi_get_legal_moves',
       title: 'Xiangqi Legal Moves',
       description:
-        'List legal Xiangqi moves for a session. Provide `from` to narrow the result to one piece, or omit it to inspect the whole position.',
+        'List legal Xiangqi moves for a session. Use this as the source of truth for Xiangqi move legality. Provide `from` to narrow the result to one piece, or omit it to inspect the whole position.',
       category: 'gameplay',
       gameId: 'xiangqi',
       tags: ['xiangqi', 'moves', 'legal', 'read'],
@@ -49,7 +49,7 @@ export function createXiangqiToolCatalog(service: GameService): ToolCatalogEntry
       name: 'xiangqi_play_move',
       title: 'Play Xiangqi Move',
       description:
-        'Play one Xiangqi move for the current side to move. Always inspect the state or legal moves before using this.',
+        'Play exactly one Xiangqi move for the current side to move. Re-read the latest state first, inspect legal moves, and submit a fresh reasoning summary for this exact move. Do not send cached explanations or a multi-move plan.',
       category: 'gameplay',
       gameId: 'xiangqi',
       tags: ['xiangqi', 'moves', 'play', 'write'],
@@ -59,8 +59,14 @@ export function createXiangqiToolCatalog(service: GameService): ToolCatalogEntry
         to: z.string().regex(/^[a-i](10|[1-9])$/).describe('Target square'),
         reasoning: z
           .object({
-            summary: z.string().min(1).describe('A concise summary of the reasoning process'),
-            reasoningSteps: z.array(z.string()).optional().describe('Short reasoning steps shown in the timeline'),
+            summary: z
+              .string()
+              .min(1)
+              .describe('Required move-specific summary generated from the current position'),
+            reasoningSteps: z
+              .array(z.string().min(1))
+              .min(1)
+              .describe('Required short reasoning steps that explain why this move was chosen now'),
             consideredAlternatives: z
               .array(
                 z.object({
@@ -70,11 +76,10 @@ export function createXiangqiToolCatalog(service: GameService): ToolCatalogEntry
                 }),
               )
               .optional()
-              .describe('Optional alternatives considered before the final move'),
+              .describe('Optional alternative moves considered before the final move'),
             confidence: z.number().min(0).max(1).nullable().optional().describe('Optional confidence score'),
           })
-          .optional()
-          .describe('Optional reasoning summary shown in the shared timeline'),
+          .describe('Required reasoning summary shown in the shared timeline for this exact move'),
       },
       annotations: {
         title: 'Play Xiangqi Move',
@@ -92,7 +97,7 @@ export function createXiangqiToolCatalog(service: GameService): ToolCatalogEntry
             reasoning: z
               .object({
                 summary: z.string().min(1),
-                reasoningSteps: z.array(z.string()).optional(),
+                reasoningSteps: z.array(z.string().min(1)).min(1),
                 consideredAlternatives: z
                   .array(
                     z.object({
@@ -104,7 +109,7 @@ export function createXiangqiToolCatalog(service: GameService): ToolCatalogEntry
                   .optional(),
                 confidence: z.number().min(0).max(1).nullable().optional(),
               })
-              .optional(),
+              .describe('Fresh current-position reasoning for this move'),
           })
           .parse(input)
 

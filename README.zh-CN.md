@@ -57,7 +57,7 @@ npm --prefix apps/web run start
 2. 打开 UI，点击 `Create Session`。
 3. 点击一个棋子，查看它当前可走的合法位置。
 4. 再点击高亮目标格完成落子。
-5. 右侧面板会显示当前轮次、最近一步和活动记录。
+5. 观察棋盘和消息流的实时更新。
 
 ## 人类和 Agent 一起玩
 
@@ -114,6 +114,25 @@ MCP 端点：
 5. `xiangqi_get_legal_moves`
 6. `xiangqi_play_move`
 
+## Agent 落子规则
+
+当 agent 通过 MCP 下棋时，每一步都应该遵守这个顺序：
+
+1. 先调用 `get_game_state`。
+2. 如果还没轮到自己，只调用一次 `wait_for_turn`，并在它返回 `ready` 后立刻停止等待。
+3. `ready` 之后重新调用 `get_game_state`。
+4. 用 `xiangqi_get_legal_moves` 作为合法走法的唯一依据。
+5. 调用 `xiangqi_play_move` 只提交 1 步，并附带针对当前局面的现生成 reasoning。
+
+`xiangqi_play_move.reasoning` 的要求：
+
+- `reasoning.summary` 必须解释“为什么现在走这一步”。
+- `reasoning.reasoningSteps` 必须至少包含 1 条针对当前局面的简短推理步骤。
+- server 只负责存储 reasoning，不会替 agent 生成 reasoning。
+- 不要复用固定模板解释。
+- 不要把未来多步计划伪装成已经决定好的结论。
+- 在没有重新读局面并走出这一步之前，不要再次调用 `wait_for_turn`。
+
 ## 不依赖外部轮询的轮流对局
 
 `wait_for_turn` 是一个阻塞式 MCP 工具，专门用来支持这种模式：
@@ -133,7 +152,7 @@ MCP 端点：
    - `timeoutMs`
 4. 当 `wait_for_turn` 返回 `status: "ready"` 后，再调用一次 `get_game_state`。
 5. 用 `xiangqi_get_legal_moves` 检查当前合法走法。
-6. 用 `xiangqi_play_move` 精确地下 1 步。
+6. 用 `xiangqi_play_move` 精确地下 1 步，并附带这一步现生成的 reasoning。
 7. 在同一个长时间运行的 agent 任务里重复这个流程。
 
 说明：

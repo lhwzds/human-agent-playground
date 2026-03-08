@@ -110,6 +110,40 @@ describe('GameService', () => {
     )
   })
 
+  it('requires fresh reasoning on agent MCP moves', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    const service = new GameService(join(directory, 'sessions.json'))
+    const session = await service.createSession({ gameId: 'xiangqi' })
+
+    const missingReasoningError = await service
+      .playMove(session.id, {
+        from: 'a4',
+        to: 'a5',
+        actorKind: 'agent',
+        channel: 'mcp',
+      })
+      .catch((error) => error)
+
+    expect(missingReasoningError).toBeInstanceOf(Error)
+    expect(missingReasoningError.message).toContain('reasoning summary')
+
+    const missingStepsError = await service
+      .playMove(session.id, {
+        from: 'a4',
+        to: 'a5',
+        actorKind: 'agent',
+        channel: 'mcp',
+        reasoning: {
+          summary: 'Advance the pawn.',
+          reasoningSteps: [],
+        },
+      })
+      .catch((error) => error)
+
+    expect(missingStepsError).toBeInstanceOf(Error)
+    expect(missingStepsError.message).toContain('reasoning step')
+  })
+
   it('waits until the expected turn arrives without polling outside the service', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
     const service = new GameService(join(directory, 'sessions.json'))

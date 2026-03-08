@@ -127,6 +127,7 @@ export class GameService {
       channel: 'http',
     })
     const reasoning = parseDecisionExplanation(input)
+    validateAgentMoveExplanation(actor, reasoning)
 
     const nextState = adapter.playMove(session.state, input)
     const moveDetails = parseMoveEventDetails(nextState)
@@ -507,6 +508,23 @@ function parseDecisionExplanation(input: unknown): DecisionExplanation | undefin
         : typeof confidenceRaw === 'number' && confidenceRaw >= 0 && confidenceRaw <= 1
           ? confidenceRaw
           : undefined,
+  }
+}
+
+function validateAgentMoveExplanation(
+  actor: SessionActorContext,
+  reasoning: DecisionExplanation | undefined,
+) {
+  if (actor.actorKind !== 'agent' || actor.channel !== 'mcp') {
+    return
+  }
+
+  if (!reasoning) {
+    throw new Error('Agent MCP moves must include a reasoning summary for the current move')
+  }
+
+  if (reasoning.reasoningSteps.length === 0) {
+    throw new Error('Agent MCP moves must include at least one reasoning step')
   }
 }
 
