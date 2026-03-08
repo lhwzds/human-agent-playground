@@ -39,6 +39,8 @@ export function createSession(input: Partial<CreateSessionInput> = {}): Promise<
     method: 'POST',
     body: JSON.stringify({
       gameId: 'xiangqi',
+      actorKind: 'human',
+      channel: 'ui',
       ...input,
     }),
   })
@@ -51,6 +53,10 @@ export function getSession(sessionId: string): Promise<GameSession> {
 export function resetSession(sessionId: string): Promise<GameSession> {
   return request(`/api/sessions/${sessionId}/reset`, {
     method: 'POST',
+    body: JSON.stringify({
+      actorKind: 'human',
+      channel: 'ui',
+    }),
   })
 }
 

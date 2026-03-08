@@ -22,6 +22,7 @@ interface SessionSetupCardProps {
   selectedGameId: string
   onCreateSession: () => void
   onGameChange: (gameId: string) => void
+  embedded?: boolean
 }
 
 type LiveSyncState = 'connecting' | 'live' | 'reconnecting' | 'offline'
@@ -71,9 +72,10 @@ function SessionSetupCard({
   selectedGameId,
   onCreateSession,
   onGameChange,
+  embedded = false,
 }: SessionSetupCardProps) {
   return (
-    <div className="panel-card">
+    <div className={embedded ? 'footer-section' : 'panel-card'}>
       <h2>Session Setup</h2>
       <label className="field-block">
         <span>Game</span>
@@ -241,6 +243,7 @@ function App() {
                 selectedGameId={selectedGameId}
                 onCreateSession={handleCreateSession}
                 onGameChange={setSelectedGameId}
+                embedded
               />
             }
             onSessionUpdate={setSession}

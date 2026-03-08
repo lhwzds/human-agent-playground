@@ -9,7 +9,7 @@
     "check": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && tsc -b",
     "preview": "vite preview",
     "start": "vite --host 127.0.0.1 --port 4173",
-    "test": "vitest run"
+    "test": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && vitest run"
   },
   "dependencies": {
     "@human-agent-playground/core": "file:../../packages/core",

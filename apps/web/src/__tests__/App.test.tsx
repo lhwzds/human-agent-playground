@@ -46,6 +46,19 @@ describe('App', () => {
         gameId: 'xiangqi',
         createdAt: '2026-03-07T00:00:00.000Z',
         updatedAt: '2026-03-07T00:00:00.000Z',
+        events: [
+          {
+            id: 'event-created',
+            kind: 'session_created',
+            createdAt: '2026-03-07T00:00:00.000Z',
+            actorKind: 'human',
+            channel: 'ui',
+            summary: 'Created a new Xiangqi session.',
+            details: {
+              gameId: 'xiangqi',
+            },
+          },
+        ],
         state: {
           kind: 'xiangqi',
           turn: 'red',
@@ -82,6 +95,38 @@ describe('App', () => {
         gameId: 'xiangqi',
         createdAt: '2026-03-07T00:00:00.000Z',
         updatedAt: '2026-03-07T00:01:00.000Z',
+        events: [
+          {
+            id: 'event-created',
+            kind: 'session_created',
+            createdAt: '2026-03-07T00:00:00.000Z',
+            actorKind: 'human',
+            channel: 'ui',
+            summary: 'Created a new Xiangqi session.',
+            details: {
+              gameId: 'xiangqi',
+            },
+          },
+          {
+            id: 'event-move-1',
+            kind: 'move_played',
+            createdAt: '2026-03-07T00:01:00.000Z',
+            actorKind: 'agent',
+            channel: 'mcp',
+            summary: 'Red played a4 -> a5.',
+            reasoning: {
+              summary: 'Push the pawn to gain space on the file.',
+              reasoningSteps: ['The pawn advance is the cleanest space-gaining move.'],
+              consideredAlternatives: [],
+              confidence: 0.71,
+            },
+            details: {
+              from: 'a4',
+              to: 'a5',
+              side: 'red',
+            },
+          },
+        ],
         state: {
           kind: 'xiangqi',
           turn: 'black',
@@ -118,13 +163,13 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Turn: black')).toBeInTheDocument()
-      const lastMoveCard = screen.getByRole('heading', { name: 'Last Move' }).closest('.panel-card')
-      const recentActivityCard = screen.getByRole('heading', { name: 'Recent Activity' }).closest('.panel-card')
+      const messageFeedCard = screen.getByRole('heading', { name: 'Message Feed' }).closest('.panel-card')
 
-      expect(lastMoveCard).not.toBeNull()
-      expect(recentActivityCard).not.toBeNull()
-      expect(within(lastMoveCard as HTMLElement).getByText('a4 → a5')).toBeInTheDocument()
-      expect(within(recentActivityCard as HTMLElement).getByText('No earlier moves yet.')).toBeInTheDocument()
+      expect(messageFeedCard).not.toBeNull()
+      expect(within(messageFeedCard as HTMLElement).getByText('a4 → a5')).toBeInTheDocument()
+      expect(within(messageFeedCard as HTMLElement).getByText('Reasoning Summary')).toBeInTheDocument()
+      expect(within(messageFeedCard as HTMLElement).getByText('Push the pawn to gain space on the file.')).toBeInTheDocument()
+      expect(within(messageFeedCard as HTMLElement).getByText('Session Created')).toBeInTheDocument()
     })
   })
 
@@ -143,6 +188,19 @@ describe('App', () => {
         gameId: 'go',
         createdAt: '2026-03-07T00:00:00.000Z',
         updatedAt: '2026-03-07T00:00:00.000Z',
+        events: [
+          {
+            id: 'event-created',
+            kind: 'session_created',
+            createdAt: '2026-03-07T00:00:00.000Z',
+            actorKind: 'human',
+            channel: 'ui',
+            summary: 'Created a new Go session.',
+            details: {
+              gameId: 'go',
+            },
+          },
+        ],
         state: {
           kind: 'go',
         },

@@ -17,6 +17,11 @@ export async function getXiangqiLegalMoves(
 export function playXiangqiMove(sessionId: string, from: Square, to: Square): Promise<GameSession> {
   return request(`/api/sessions/${sessionId}/moves`, {
     method: 'POST',
-    body: JSON.stringify({ from, to }),
+    body: JSON.stringify({
+      from,
+      to,
+      actorKind: 'human',
+      channel: 'ui',
+    }),
   })
 }

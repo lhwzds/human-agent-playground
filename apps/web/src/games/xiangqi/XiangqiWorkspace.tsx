@@ -1,4 +1,8 @@
-import type { GameSession } from '@human-agent-playground/core'
+import type {
+  DecisionExplanation,
+  GameSession,
+  SessionEvent,
+} from '@human-agent-playground/core'
 import {
   squareToCoordinates,
   type Square,
@@ -10,11 +14,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { GameWorkspaceProps } from '../types'
 import { getXiangqiLegalMoves, playXiangqiMove } from './api'
 import { XiangqiBoard } from './components/XiangqiBoard'
-
-interface RecentMoveEntry {
-  key: string
-  move: XiangqiMove
-}
 
 function toXiangqiSession(session: GameSession): GameSession<XiangqiGameState> {
   if (
@@ -42,8 +41,8 @@ export function XiangqiWorkspace({
   const session = toXiangqiSession(rawSession)
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
   const [legalMoves, setLegalMoves] = useState<XiangqiMove[]>([])
-  const [recentMoves, setRecentMoves] = useState<RecentMoveEntry[]>([])
-  const lastRecordedMoveKey = useRef<string | null>(null)
+  const [feedHeight, setFeedHeight] = useState<number | null>(null)
+  const boardPanelRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     setSelectedSquare(null)
@@ -51,27 +50,43 @@ export function XiangqiWorkspace({
   }, [session.id, session.updatedAt])
 
   useEffect(() => {
-    const lastMove = session.state.lastMove
-    const moveKey = lastMove
-      ? `${session.id}:${session.updatedAt}:${lastMove.side}:${lastMove.notation}`
-      : `${session.id}:${session.updatedAt}:opening`
+    const boardPanel = boardPanelRef.current
+    const boardShell = boardPanel?.querySelector<HTMLElement>('.board-shell')
 
-    if (lastRecordedMoveKey.current === moveKey) {
+    if (!boardPanel || !boardShell) {
       return
     }
 
-    lastRecordedMoveKey.current = moveKey
+    const updateFeedHeight = () => {
+      if (window.innerWidth <= 1080) {
+        setFeedHeight(null)
+        return
+      }
 
-    if (!lastMove) {
-      setRecentMoves([])
-      return
+      const boardPanelStyles = window.getComputedStyle(boardPanel)
+      const verticalChrome =
+        Number.parseFloat(boardPanelStyles.paddingTop) +
+        Number.parseFloat(boardPanelStyles.paddingBottom) +
+        Number.parseFloat(boardPanelStyles.borderTopWidth) +
+        Number.parseFloat(boardPanelStyles.borderBottomWidth)
+
+      setFeedHeight(boardShell.getBoundingClientRect().height + verticalChrome)
     }
 
-    setRecentMoves((current) => {
-      const withoutDuplicate = current.filter((entry) => entry.key !== moveKey)
-      return [{ key: moveKey, move: lastMove }, ...withoutDuplicate].slice(0, 5)
+    updateFeedHeight()
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateFeedHeight()
     })
-  }, [session.id, session.updatedAt, session.state.lastMove])
+
+    resizeObserver.observe(boardShell)
+    window.addEventListener('resize', updateFeedHeight)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', updateFeedHeight)
+    }
+  }, [session.id, session.updatedAt])
 
   async function handleSquareClick(square: Square) {
     const { row, col } = squareToCoordinates(square)
@@ -115,15 +130,17 @@ export function XiangqiWorkspace({
 
   const legalTargets = new Set(legalMoves.map((move) => move.to))
   const lastMove = session.state.lastMove
-  const earlierMoves = recentMoves.slice(1)
+  const sessionEvents = [...session.events].sort((left, right) =>
+    left.createdAt.localeCompare(right.createdAt),
+  )
   const selectedMovesLabel =
     selectedSquare && legalMoves.length > 0
       ? legalMoves.map((move) => move.to).join(', ')
       : 'Select a piece to inspect legal moves.'
 
   return (
-    <>
-      <article className="board-panel">
+    <div className="game-workspace-layout">
+      <article ref={boardPanelRef} className="board-panel">
         <XiangqiBoard
           board={session.state.board}
           selectedSquare={selectedSquare}
@@ -134,96 +151,192 @@ export function XiangqiWorkspace({
         />
       </article>
 
-      <aside className="side-panel">
-        {setupPanel}
-
-        <div className="panel-card">
-          <h2>Session</h2>
-          <p className="mono">{session.id}</p>
-          <p>{selectedMovesLabel}</p>
-          <p>{game.description}</p>
-        </div>
-
-        <div className="panel-card">
-          <h2>Last Move</h2>
-          <p>{lastMove ? `${lastMove.from} → ${lastMove.to}` : 'No moves yet.'}</p>
-          <p>
-            {lastMove
-              ? `${lastMove.piece.display}${lastMove.captured ? ` captured ${lastMove.captured.display}` : ''}`
-              : ''}
-          </p>
-        </div>
-
-        <div className="panel-card">
-          <h2>Recent Activity</h2>
-          {earlierMoves.length === 0 ? (
-            <p>No earlier moves yet.</p>
+      <aside className="side-panel" style={feedHeight ? { height: `${feedHeight}px` } : undefined}>
+        <div className="panel-card panel-card-feed">
+          <h2>Message Feed</h2>
+          {sessionEvents.length === 0 ? (
+            <p>No session events yet.</p>
           ) : (
-            <ol className="recent-move-list">
-              {earlierMoves.map(({ key, move }) => (
-                <li
-                  key={key}
-                  className="recent-move-item"
-                >
-                  <strong>{`${move.from} → ${move.to}`}</strong>
-                  <span>
-                    {formatSideLabel(move.side)} {move.piece.display}
-                    {move.captured ? ` captured ${move.captured.display}` : ''}
-                  </span>
-                </li>
+            <ol className="message-feed-list">
+              {sessionEvents.map((event) => (
+                <MessageFeedItem key={event.id} event={event} />
               ))}
             </ol>
           )}
         </div>
-
-        {session.state.isCheck && (
-          <div className="panel-card check-card">
-            <h2>Check</h2>
-            <p>{session.state.turn} must respond to check before any other move is legal.</p>
-          </div>
-        )}
-
-        <div className="panel-card">
-          <h2>Actions</h2>
-          <button className="primary-button" type="button" onClick={handleReset}>
-            Reset Session
-          </button>
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={async () => {
-              onError(null)
-              await onRefreshSession(session.id)
-            }}
-          >
-            Refresh Now
-          </button>
-        </div>
-
-        <div className="panel-card">
-          <h2>MCP Shape</h2>
-          <p>Expose tools such as:</p>
-          <ul>
-            <li>`list_games`</li>
-            <li>`list_sessions`</li>
-            <li>`get_game_state`</li>
-            <li>`xiangqi_get_legal_moves`</li>
-            <li>`xiangqi_play_move`</li>
-            <li>`reset_session`</li>
-          </ul>
-        </div>
-
-        {error && (
-          <div className="panel-card error-card">
-            <h2>Error</h2>
-            <p>{error}</p>
-          </div>
-        )}
       </aside>
-    </>
+
+      <section className="workspace-footer">
+        <div className="panel-card workspace-footer-card">
+          {setupPanel}
+
+          <div className="footer-section">
+          <h2>Session</h2>
+          <p className="mono">{session.id}</p>
+          <p>{selectedMovesLabel}</p>
+          <p>{game.description}</p>
+          </div>
+
+          {session.state.isCheck && (
+            <div className="footer-section check-card">
+              <h2>Check</h2>
+              <p>{session.state.turn} must respond to check before any other move is legal.</p>
+            </div>
+          )}
+
+          <div className="footer-section">
+            <h2>Actions</h2>
+            <button className="primary-button" type="button" onClick={handleReset}>
+              Reset Session
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={async () => {
+                onError(null)
+                await onRefreshSession(session.id)
+              }}
+            >
+              Refresh Now
+            </button>
+          </div>
+
+          <div className="footer-section">
+            <h2>MCP Shape</h2>
+            <p>Expose tools such as:</p>
+            <ul>
+              <li>`list_games`</li>
+              <li>`list_sessions`</li>
+              <li>`search_tools`</li>
+              <li>`get_game_state`</li>
+              <li>`xiangqi_get_legal_moves`</li>
+              <li>`xiangqi_play_move`</li>
+              <li>`reset_session`</li>
+            </ul>
+          </div>
+
+          {error && (
+            <div className="footer-section error-card">
+              <h2>Error</h2>
+              <p>{error}</p>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
   )
 }
 
-function formatSideLabel(side: XiangqiMove['side']) {
-  return side === 'red' ? 'Red' : 'Black'
+function MessageFeedItem({ event }: { event: SessionEvent }) {
+  const moveDetails = event.kind === 'move_played' ? formatMoveDetails(event) : ''
+
+  return (
+    <li className={`message-feed-item message-feed-item-${event.actorKind}`}>
+      <article className="message-feed-bubble">
+        <p className="message-feed-meta">
+          {formatActorLabel(event)} · {formatTimestamp(event.createdAt)}
+        </p>
+        <strong>{formatEventHeadline(event)}</strong>
+        <p className="message-feed-summary">{event.summary}</p>
+        {moveDetails ? <p className="message-feed-summary">{moveDetails}</p> : null}
+        {event.reasoning ? <ReasoningSummary explanation={event.reasoning} compact /> : null}
+      </article>
+    </li>
+  )
+}
+
+function ReasoningSummary({
+  explanation,
+  compact = false,
+}: {
+  explanation: DecisionExplanation
+  compact?: boolean
+}) {
+  return (
+    <div className={`reasoning-summary ${compact ? 'reasoning-summary-compact' : ''}`}>
+      <p className="reasoning-summary-title">Reasoning Summary</p>
+      <p>{explanation.summary}</p>
+
+      {explanation.reasoningSteps.length > 0 && (
+        <ul className="reasoning-list">
+          {explanation.reasoningSteps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ul>
+      )}
+
+      {explanation.consideredAlternatives.length > 0 && (
+        <ul className="reasoning-list">
+          {explanation.consideredAlternatives.map((alternative) => (
+            <li key={`${alternative.action}:${alternative.summary}`}>
+              {alternative.action}: {alternative.summary}
+              {alternative.rejectedBecause ? ` (${alternative.rejectedBecause})` : ''}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {typeof explanation.confidence === 'number' && (
+        <p className="reasoning-confidence">Confidence: {explanation.confidence.toFixed(2)}</p>
+      )}
+    </div>
+  )
+}
+
+function formatEventHeadline(event: SessionEvent) {
+  if (
+    event.kind === 'move_played' &&
+    typeof event.details.from === 'string' &&
+    typeof event.details.to === 'string'
+  ) {
+    return `${event.details.from} → ${event.details.to}`
+  }
+
+  if (event.kind === 'session_created') {
+    return 'Session Created'
+  }
+
+  if (event.kind === 'session_reset') {
+    return 'Session Reset'
+  }
+
+  return event.summary
+}
+
+function formatMoveDetails(event: SessionEvent) {
+  const pieceDisplay = typeof event.details.pieceDisplay === 'string' ? event.details.pieceDisplay : null
+  const capturedDisplay =
+    typeof event.details.capturedDisplay === 'string' ? event.details.capturedDisplay : null
+
+  if (!pieceDisplay) {
+    return ''
+  }
+
+  return capturedDisplay ? `${pieceDisplay} captured ${capturedDisplay}` : pieceDisplay
+}
+
+function formatActorLabel(event: SessionEvent) {
+  const actorLabel =
+    event.actorName ??
+    (event.actorKind === 'human'
+      ? 'Human'
+      : event.actorKind === 'agent'
+        ? 'Agent'
+        : event.actorKind === 'system'
+          ? 'System'
+          : 'Unknown')
+
+  return `${actorLabel} via ${event.channel}`
+}
+
+function formatTimestamp(timestamp: string) {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.valueOf())) {
+    return timestamp
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
