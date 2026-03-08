@@ -8,6 +8,10 @@ One session can be reached from:
 - an HTTP API for local services
 - an MCP server for Codex, Cloud Code, or any MCP-compatible agent
 
+## UI preview
+
+![Human Agent Playground web UI](./docs/images/playground-ui.png)
+
 ## What this project is for
 
 This project is not just a board renderer.
