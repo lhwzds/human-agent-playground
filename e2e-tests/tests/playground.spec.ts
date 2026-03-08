@@ -10,6 +10,9 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   await page.goto('/')
 
   await expect(page.getByText('Shared Tabletop Sessions For Humans And Agents')).toBeVisible()
+  await expect(page.getByText('楚河')).toBeVisible()
+  await expect(page.getByText('汉界')).toBeVisible()
+  await expect(page.locator('.board-cell-river-line')).toHaveCount(9)
   await expect(page.locator('.mono').first()).toBeVisible()
   const previousSessionId = (await page.locator('.mono').first().textContent())?.trim()
   await page.getByRole('button', { name: 'Create Session' }).click()

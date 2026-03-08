@@ -78,6 +78,7 @@
 }
 
 .board-shell {
+  position: relative;
   padding: 18px;
   border-radius: 22px;
   background: linear-gradient(180deg, #c88f51 0%, #b87a44 100%);
@@ -86,14 +87,38 @@
     0 16px 28px rgba(86, 52, 31, 0.18);
 }
 
+.board-frame {
+  position: relative;
+}
+
+.board-river {
+  position: absolute;
+  inset-inline: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-inline: clamp(42px, 8vw, 88px);
+  pointer-events: none;
+  color: rgba(120, 60, 20, 0.72);
+  font-family: 'STKaiti', 'KaiTi', serif;
+  font-size: clamp(22px, 2.2vw, 34px);
+  letter-spacing: 0.28em;
+  text-shadow: 0 1px 0 rgba(255, 245, 225, 0.4);
+}
+
+.board-river span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(228, 183, 122, 0.88);
+}
+
 .board-grid {
   display: grid;
   grid-template-columns: repeat(9, minmax(54px, 1fr));
   gap: 0;
-  background:
-    linear-gradient(90deg, rgba(85, 45, 21, 0.7) 0 1px, transparent 1px 100%),
-    linear-gradient(180deg, rgba(85, 45, 21, 0.7) 0 1px, transparent 1px 100%);
-  background-size: calc(100% / 9) calc(100% / 10);
   background-color: #e4b77a;
   border: 2px solid rgba(85, 45, 21, 0.75);
 }
@@ -105,15 +130,27 @@
   place-items: center;
   border: none;
   background: transparent;
+  box-shadow:
+    inset -1px 0 0 rgba(85, 45, 21, 0.7),
+    inset 0 -1px 0 rgba(85, 45, 21, 0.7);
   cursor: pointer;
 }
 
+.board-cell-river-line {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: rgba(85, 45, 21, 0.7);
+  pointer-events: none;
+}
+
 .board-cell-river-bottom {
-  margin-bottom: 14px;
+  margin-bottom: 7px;
 }
 
 .board-cell-river-top {
-  margin-top: 14px;
+  margin-top: 7px;
 }
 
 .board-cell-selected::after,
@@ -147,6 +184,8 @@
 }
 
 .piece {
+  position: relative;
+  z-index: 1;
   width: 78%;
   aspect-ratio: 1 / 1;
   display: grid;
@@ -178,6 +217,7 @@
 
 .cell-label {
   position: absolute;
+  z-index: 1;
   right: 4px;
   bottom: 4px;
   font-size: 10px;
