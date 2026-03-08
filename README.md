@@ -95,19 +95,23 @@ Current MCP tools:
 
 - `list_games`
 - `list_sessions`
+- `search_tools`
 - `create_session`
 - `get_game_state`
 - `xiangqi_get_legal_moves`
 - `xiangqi_play_move`
 - `reset_session`
 
+Tool metadata now includes category and tags in `tools/list`, and `search_tools` can filter by `query`, `category`, `gameId`, and `tags`.
+
 Recommended tool order:
 
 1. `list_games`
-2. `list_sessions` or `create_session`
-3. `get_game_state`
-4. `xiangqi_get_legal_moves`
-5. `xiangqi_play_move`
+2. `search_tools` when the server exposes many tools
+3. `list_sessions` or `create_session`
+4. `get_game_state`
+5. `xiangqi_get_legal_moves`
+6. `xiangqi_play_move`
 
 ## Repo Layout
 

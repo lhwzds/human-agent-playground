@@ -19,17 +19,19 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 
 1. Confirm the playground server is running.
 2. Use `list_games` to confirm that `xiangqi` is available.
-3. Use `list_sessions` to discover an existing shared session when a human is already using the UI.
-4. If no suitable session exists, call `create_session` with `gameId: "xiangqi"`.
-5. Use `get_game_state` before making decisions.
-6. Use `xiangqi_get_legal_moves` before every move. Provide `from` when you want to inspect one piece.
-7. Choose a move from the returned legal move set and call `xiangqi_play_move`.
-8. Re-check `get_game_state` after the move when you need confirmation or a summary.
+3. Use `search_tools` when you need to discover tools by category, game id, tags, or free-text query.
+4. Use `list_sessions` to discover an existing shared session when a human is already using the UI.
+5. If no suitable session exists, call `create_session` with `gameId: "xiangqi"`.
+6. Use `get_game_state` before making decisions.
+7. Use `xiangqi_get_legal_moves` before every move. Provide `from` when you want to inspect one piece.
+8. Choose a move from the returned legal move set and call `xiangqi_play_move`.
+9. Re-check `get_game_state` after the move when you need confirmation or a summary.
 
 ## Tool guide
 
 - `list_games`: discover supported game ids
 - `list_sessions`: discover active shared sessions
+- `search_tools`: search tool metadata by query, category, game id, or tags
 - `create_session`: create a new session for one game
 - `get_game_state`: read board state, turn, winner, last move, and history summary
 - `xiangqi_get_legal_moves`: inspect legal Xiangqi moves
@@ -42,6 +44,7 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 - Always report the `sessionId` you are using when coordination matters.
 - Treat the web UI and MCP as two views over the same session, not as separate games.
 - The web UI updates live after MCP moves, so a human can watch the same board while the agent plays.
+- Prefer `search_tools` before guessing tool names on servers that expose many game-specific tools.
 
 ## Guardrails
 

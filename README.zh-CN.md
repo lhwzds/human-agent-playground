@@ -95,19 +95,23 @@ MCP 端点：
 
 - `list_games`
 - `list_sessions`
+- `search_tools`
 - `create_session`
 - `get_game_state`
 - `xiangqi_get_legal_moves`
 - `xiangqi_play_move`
 - `reset_session`
 
+现在 `tools/list` 返回的工具信息里也会带上分类和标签元数据，`search_tools` 支持按 `query`、`category`、`gameId` 和 `tags` 过滤。
+
 推荐的调用顺序：
 
 1. `list_games`
-2. `list_sessions` 或 `create_session`
-3. `get_game_state`
-4. `xiangqi_get_legal_moves`
-5. `xiangqi_play_move`
+2. 当工具很多时先用 `search_tools`
+3. `list_sessions` 或 `create_session`
+4. `get_game_state`
+5. `xiangqi_get_legal_moves`
+6. `xiangqi_play_move`
 
 ## 仓库结构
 

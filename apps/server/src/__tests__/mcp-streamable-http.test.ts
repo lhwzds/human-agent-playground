@@ -82,6 +82,7 @@ describe('Streamable HTTP MCP server', () => {
       expect.arrayContaining([
         'list_games',
         'list_sessions',
+        'search_tools',
         'create_session',
         'get_game_state',
         'reset_session',
@@ -89,6 +90,41 @@ describe('Streamable HTTP MCP server', () => {
         'xiangqi_play_move',
       ]),
     )
+    expect(
+      tools.tools.find((tool) => tool.name === 'search_tools')?._meta?.['human-agent-playground/tool'],
+    ).toEqual(
+      expect.objectContaining({
+        category: 'catalog',
+        tags: expect.arrayContaining(['tools', 'search']),
+      }),
+    )
+    expect(
+      tools.tools.find((tool) => tool.name === 'xiangqi_play_move')?._meta?.['human-agent-playground/tool'],
+    ).toEqual(
+      expect.objectContaining({
+        category: 'gameplay',
+        gameId: 'xiangqi',
+      }),
+    )
+
+    const searchResult = extractPayload(
+      await client.callTool({
+        name: 'search_tools',
+        arguments: {
+          category: 'gameplay',
+          gameId: 'xiangqi',
+        },
+      }),
+    ) as {
+      categories: string[]
+      tools: Array<{ name: string; category: string; gameId?: string }>
+    }
+
+    expect(searchResult.categories).toEqual(expect.arrayContaining(['catalog', 'gameplay', 'session']))
+    expect(searchResult.tools.map((tool) => tool.name)).toEqual([
+      'xiangqi_get_legal_moves',
+      'xiangqi_play_move',
+    ])
 
     const created = extractPayload(
       await client.callTool({
