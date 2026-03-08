@@ -15,6 +15,8 @@ describe('XiangqiBoard', () => {
         board={game.board}
         selectedSquare="a1"
         legalTargets={new Set(['a4'])}
+        lastMoveFrom="a4"
+        lastMoveTo="a5"
         onSquareClick={onSquareClick}
       />,
     )
@@ -25,5 +27,7 @@ describe('XiangqiBoard', () => {
     fireEvent.click(square!)
     expect(onSquareClick).toHaveBeenCalledWith('a1')
     expect(screen.getByText('帅')).toBeInTheDocument()
+    expect(container.querySelector('[data-square="a4"]')).toHaveClass('board-cell-last-from')
+    expect(container.querySelector('[data-square="a5"]')).toHaveClass('board-cell-last-to')
   })
 })

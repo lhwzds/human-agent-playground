@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App, { resetBootstrapCacheForTests } from '../App'
@@ -118,7 +118,13 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Turn: black')).toBeInTheDocument()
-      expect(screen.getByText('a4 → a5')).toBeInTheDocument()
+      const lastMoveCard = screen.getByRole('heading', { name: 'Last Move' }).closest('.panel-card')
+      const recentActivityCard = screen.getByRole('heading', { name: 'Recent Activity' }).closest('.panel-card')
+
+      expect(lastMoveCard).not.toBeNull()
+      expect(recentActivityCard).not.toBeNull()
+      expect(within(lastMoveCard as HTMLElement).getByText('a4 → a5')).toBeInTheDocument()
+      expect(within(recentActivityCard as HTMLElement).getByText('No earlier moves yet.')).toBeInTheDocument()
     })
   })
 

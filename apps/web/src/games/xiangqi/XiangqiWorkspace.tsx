@@ -5,11 +5,16 @@ import {
   type XiangqiGameState,
   type XiangqiMove,
 } from '@human-agent-playground/game-xiangqi'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { GameWorkspaceProps } from '../types'
 import { getXiangqiLegalMoves, playXiangqiMove } from './api'
 import { XiangqiBoard } from './components/XiangqiBoard'
+
+interface RecentMoveEntry {
+  key: string
+  move: XiangqiMove
+}
 
 function toXiangqiSession(session: GameSession): GameSession<XiangqiGameState> {
   if (
@@ -37,11 +42,36 @@ export function XiangqiWorkspace({
   const session = toXiangqiSession(rawSession)
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
   const [legalMoves, setLegalMoves] = useState<XiangqiMove[]>([])
+  const [recentMoves, setRecentMoves] = useState<RecentMoveEntry[]>([])
+  const lastRecordedMoveKey = useRef<string | null>(null)
 
   useEffect(() => {
     setSelectedSquare(null)
     setLegalMoves([])
   }, [session.id, session.updatedAt])
+
+  useEffect(() => {
+    const lastMove = session.state.lastMove
+    const moveKey = lastMove
+      ? `${session.id}:${session.updatedAt}:${lastMove.side}:${lastMove.notation}`
+      : `${session.id}:${session.updatedAt}:opening`
+
+    if (lastRecordedMoveKey.current === moveKey) {
+      return
+    }
+
+    lastRecordedMoveKey.current = moveKey
+
+    if (!lastMove) {
+      setRecentMoves([])
+      return
+    }
+
+    setRecentMoves((current) => {
+      const withoutDuplicate = current.filter((entry) => entry.key !== moveKey)
+      return [{ key: moveKey, move: lastMove }, ...withoutDuplicate].slice(0, 5)
+    })
+  }, [session.id, session.updatedAt, session.state.lastMove])
 
   async function handleSquareClick(square: Square) {
     const { row, col } = squareToCoordinates(square)
@@ -85,6 +115,7 @@ export function XiangqiWorkspace({
 
   const legalTargets = new Set(legalMoves.map((move) => move.to))
   const lastMove = session.state.lastMove
+  const earlierMoves = recentMoves.slice(1)
   const selectedMovesLabel =
     selectedSquare && legalMoves.length > 0
       ? legalMoves.map((move) => move.to).join(', ')
@@ -97,6 +128,8 @@ export function XiangqiWorkspace({
           board={session.state.board}
           selectedSquare={selectedSquare}
           legalTargets={legalTargets}
+          lastMoveFrom={lastMove?.from ?? null}
+          lastMoveTo={lastMove?.to ?? null}
           onSquareClick={handleSquareClick}
         />
       </article>
@@ -119,6 +152,28 @@ export function XiangqiWorkspace({
               ? `${lastMove.piece.display}${lastMove.captured ? ` captured ${lastMove.captured.display}` : ''}`
               : ''}
           </p>
+        </div>
+
+        <div className="panel-card">
+          <h2>Recent Activity</h2>
+          {earlierMoves.length === 0 ? (
+            <p>No earlier moves yet.</p>
+          ) : (
+            <ol className="recent-move-list">
+              {earlierMoves.map(({ key, move }) => (
+                <li
+                  key={key}
+                  className="recent-move-item"
+                >
+                  <strong>{`${move.from} → ${move.to}`}</strong>
+                  <span>
+                    {formatSideLabel(move.side)} {move.piece.display}
+                    {move.captured ? ` captured ${move.captured.display}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
         </div>
 
         {session.state.isCheck && (
@@ -167,4 +222,8 @@ export function XiangqiWorkspace({
       </aside>
     </>
   )
+}
+
+function formatSideLabel(side: XiangqiMove['side']) {
+  return side === 'red' ? 'Red' : 'Black'
 }

@@ -117,7 +117,9 @@
 }
 
 .board-cell-selected::after,
-.board-cell-target::after {
+.board-cell-target::after,
+.board-cell-last-from::after,
+.board-cell-last-to::after {
   content: '';
   position: absolute;
   inset: 10%;
@@ -131,6 +133,17 @@
 
 .board-cell-target::after {
   border: 2px dashed rgba(36, 77, 58, 0.8);
+}
+
+.board-cell-last-from::after {
+  border: 2px solid rgba(180, 109, 24, 0.88);
+  inset: 16%;
+}
+
+.board-cell-last-to::after {
+  border: 2px solid rgba(34, 113, 70, 0.92);
+  box-shadow: 0 0 0 6px rgba(34, 113, 70, 0.16);
+  animation: board-last-move-pulse 1.2s ease-out 1;
 }
 
 .piece {
@@ -212,6 +225,31 @@
   padding-left: 18px;
 }
 
+.recent-move-list {
+  margin: 10px 0 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.recent-move-item {
+  display: grid;
+  gap: 4px;
+}
+
+.recent-move-item strong {
+  font-size: 14px;
+}
+
+.recent-move-item span {
+  color: #6d533f;
+  font-size: 13px;
+}
+
+.recent-move-item-latest {
+  color: #7d3419;
+}
+
 .mono {
   font-family: 'SFMono-Regular', 'Menlo', monospace;
   word-break: break-all;
@@ -255,6 +293,23 @@
   padding: 40px 24px;
   text-align: center;
   color: #6a4a38;
+}
+
+@keyframes board-last-move-pulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.2;
+  }
+
+  45% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 @media (max-width: 1080px) {

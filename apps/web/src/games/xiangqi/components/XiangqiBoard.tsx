@@ -4,6 +4,8 @@ interface XiangqiBoardProps {
   board: XiangqiBoard
   selectedSquare: Square | null
   legalTargets: Set<Square>
+  lastMoveFrom: Square | null
+  lastMoveTo: Square | null
   onSquareClick: (square: Square) => void
 }
 
@@ -11,6 +13,8 @@ export function XiangqiBoard({
   board,
   selectedSquare,
   legalTargets,
+  lastMoveFrom,
+  lastMoveTo,
   onSquareClick,
 }: XiangqiBoardProps) {
   return (
@@ -21,6 +25,8 @@ export function XiangqiBoard({
             const square = coordinatesToSquare(rowIndex, colIndex)
             const isSelected = selectedSquare === square
             const isTarget = legalTargets.has(square)
+            const isLastMoveFrom = lastMoveFrom === square
+            const isLastMoveTo = lastMoveTo === square
 
             return (
               <button
@@ -31,6 +37,8 @@ export function XiangqiBoard({
                   rowIndex === 5 ? 'board-cell-river-top' : '',
                   isSelected ? 'board-cell-selected' : '',
                   isTarget ? 'board-cell-target' : '',
+                  isLastMoveFrom ? 'board-cell-last-from' : '',
+                  isLastMoveTo ? 'board-cell-last-to' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
