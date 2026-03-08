@@ -1,5 +1,7 @@
 # Human Agent Playground
 
+[中文说明](./README.zh-CN.md)
+
 Human Agent Playground is a TypeScript monorepo for shared board-game sessions between humans and AI agents.
 
 One session can be used from:
