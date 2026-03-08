@@ -1,5 +1,8 @@
 import { coordinatesToSquare, type Square, type XiangqiBoard } from '@human-agent-playground/game-xiangqi'
 
+const FILE_LABELS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'] as const
+const RANK_LABELS = ['10', '9', '8', '7', '6', '5', '4', '3', '2', '1'] as const
+
 interface XiangqiBoardProps {
   board: XiangqiBoard
   selectedSquare: Square | null
@@ -19,64 +22,85 @@ export function XiangqiBoard({
 }: XiangqiBoardProps) {
   return (
     <div className="board-shell">
-      <div className="board-frame">
-        <div className="board-river" aria-hidden="true">
-          <span>楚河</span>
-          <span>汉界</span>
+      <div className="board-layout">
+        <div className="board-corner-spacer" aria-hidden="true" />
+        <div className="board-top-spacer" aria-hidden="true" />
+        <div className="board-corner-spacer" aria-hidden="true" />
+        <div className="board-rank-labels" aria-hidden="true">
+          {RANK_LABELS.map((rank) => (
+            <span key={rank} className="board-axis-label board-rank-label">
+              {rank}
+            </span>
+          ))}
         </div>
-        <div className="board-grid" role="grid" aria-label="Xiangqi board">
-          {board.map((row, rowIndex) =>
-            row.map((piece, colIndex) => {
-              const square = coordinatesToSquare(rowIndex, colIndex)
-              const isSelected = selectedSquare === square
-              const isTarget = legalTargets.has(square)
-              const isLastMoveFrom = lastMoveFrom === square
-              const isLastMoveTo = lastMoveTo === square
+        <div className="board-main">
+          <div className="board-frame">
+            <div className="board-river" aria-hidden="true">
+              <span>楚河</span>
+              <span>汉界</span>
+            </div>
+            <div className="board-grid" role="grid" aria-label="Xiangqi board">
+              {board.map((row, rowIndex) =>
+                row.map((piece, colIndex) => {
+                  const square = coordinatesToSquare(rowIndex, colIndex)
+                  const isSelected = selectedSquare === square
+                  const isTarget = legalTargets.has(square)
+                  const isLastMoveFrom = lastMoveFrom === square
+                  const isLastMoveTo = lastMoveTo === square
 
-              return (
-                <button
-                  key={square}
-                  className={[
-                    'board-cell',
-                    isSelected ? 'board-cell-selected' : '',
-                    isTarget ? 'board-cell-target' : '',
-                    isLastMoveFrom ? 'board-cell-last-from' : '',
-                    isLastMoveTo ? 'board-cell-last-to' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  type="button"
-                  data-square={square}
-                  onClick={() => onSquareClick(square)}
-                >
-                  {rowIndex > 0 && rowIndex !== 5 ? (
-                    <span className="board-point-segment board-point-segment-up" aria-hidden="true" />
-                  ) : null}
-                  {rowIndex < board.length - 1 && rowIndex !== 4 ? (
-                    <span className="board-point-segment board-point-segment-down" aria-hidden="true" />
-                  ) : null}
-                  {colIndex > 0 ? (
-                    <span className="board-point-segment board-point-segment-left" aria-hidden="true" />
-                  ) : null}
-                  {colIndex < row.length - 1 ? (
-                    <span className="board-point-segment board-point-segment-right" aria-hidden="true" />
-                  ) : null}
-                  {getPalaceDiagonals(rowIndex, colIndex).map((direction) => (
-                    <span
-                      key={direction}
-                      className={`board-point-diagonal board-point-diagonal-${direction}`}
-                      aria-hidden="true"
-                    />
-                  ))}
-                  <span className={`piece piece-${piece?.side ?? 'empty'}`}>
-                    {piece?.display ?? ''}
-                  </span>
-                  <span className="cell-label">{square}</span>
-                </button>
-              )
-            }),
-          )}
+                  return (
+                    <button
+                      key={square}
+                      className={[
+                        'board-cell',
+                        isSelected ? 'board-cell-selected' : '',
+                        isTarget ? 'board-cell-target' : '',
+                        isLastMoveFrom ? 'board-cell-last-from' : '',
+                        isLastMoveTo ? 'board-cell-last-to' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      type="button"
+                      data-square={square}
+                      onClick={() => onSquareClick(square)}
+                    >
+                      {rowIndex > 0 && rowIndex !== 5 ? (
+                        <span className="board-point-segment board-point-segment-up" aria-hidden="true" />
+                      ) : null}
+                      {rowIndex < board.length - 1 && rowIndex !== 4 ? (
+                        <span className="board-point-segment board-point-segment-down" aria-hidden="true" />
+                      ) : null}
+                      {colIndex > 0 ? (
+                        <span className="board-point-segment board-point-segment-left" aria-hidden="true" />
+                      ) : null}
+                      {colIndex < row.length - 1 ? (
+                        <span className="board-point-segment board-point-segment-right" aria-hidden="true" />
+                      ) : null}
+                      {getPalaceDiagonals(rowIndex, colIndex).map((direction) => (
+                        <span
+                          key={direction}
+                          className={`board-point-diagonal board-point-diagonal-${direction}`}
+                          aria-hidden="true"
+                        />
+                      ))}
+                      <span className={`piece piece-${piece?.side ?? 'empty'}`}>
+                        {piece?.display ?? ''}
+                      </span>
+                    </button>
+                  )
+                }),
+              )}
+            </div>
+          </div>
+          <div className="board-file-labels" aria-hidden="true">
+            {FILE_LABELS.map((file) => (
+              <span key={file} className="board-axis-label board-file-label">
+                {file}
+              </span>
+            ))}
+          </div>
         </div>
+        <div className="board-side-spacer" aria-hidden="true" />
       </div>
     </div>
   )
