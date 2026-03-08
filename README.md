@@ -1,55 +1,27 @@
 # Human Agent Playground
 
-Human Agent Playground is a public TypeScript monorepo for shared game sessions between humans and AI agents.
+Human Agent Playground is a TypeScript monorepo for shared board-game sessions between humans and AI agents.
 
-One session can be reached from:
+One session can be used from:
 
-- a web UI for humans
-- an HTTP API for local services
-- an MCP server for Codex, Cloud Code, or any MCP-compatible agent
+- a web UI
+- an HTTP API
+- an MCP server
 
-## UI preview
+Current game: Xiangqi.
+
+## UI Preview
 
 ![Human Agent Playground web UI](./docs/images/playground-ui.png)
 
-## What this project is for
+## What It Does
 
-This project is not just a board renderer.
-It is a session platform where:
+- Keeps one shared game session for both humans and agents
+- Updates the web UI live when moves arrive from MCP or HTTP
+- Organizes each game under its own folder and adapter
+- Exposes MCP over Streamable HTTP
 
-- humans and agents read the same game state
-- MCP tools operate on the same match the UI is showing
-- each game lives in its own folder and adapter package
-- UI, HTTP, and MCP all act on the same shared session model
-
-## Current implementation
-
-The first concrete game is Xiangqi.
-
-Already implemented:
-
-- Xiangqi rules engine in a standalone game package
-- session persistence on disk
-- game catalog API
-- React UI with session creation, live board rendering, and move inspection
-- live session sync over SSE
-- MCP tools for listing games, creating sessions, reading state, listing legal moves, and playing moves
-
-## Workspace layout
-
-```text
-apps/
-  server/          HTTP API + MCP Streamable HTTP server
-  web/             React + Vite UI
-packages/
-  core/            shared platform contracts
-games/
-  xiangqi/         Xiangqi adapter, rules, state, move schema, tests
-docs/
-  ARCHITECTURE.md  platform direction for multi-game and AI-only play
-```
-
-## Run locally
+## Quick Start
 
 ```bash
 npm install
@@ -57,7 +29,7 @@ npm run dev:server
 npm run dev:web
 ```
 
-For fixed local ports instead of the default Vite dev port:
+Fixed local ports:
 
 ```bash
 npm --prefix apps/server run start
@@ -66,68 +38,45 @@ npm --prefix apps/web run start
 
 Default local endpoints:
 
-- server health: `http://127.0.0.1:8787/health`
+- UI: `http://127.0.0.1:4173`
 - HTTP API: `http://127.0.0.1:8787/api`
-- MCP endpoint: `http://127.0.0.1:8787/mcp`
-- web UI with `apps/web start`: `http://127.0.0.1:4173`
+- MCP: `http://127.0.0.1:8787/mcp`
+- Health: `http://127.0.0.1:8787/health`
 
-Validation:
+Override with:
 
-```bash
-npm test
-npm run check
-npm run build
-```
+- `PORT`
+- `HUMAN_AGENT_PLAYGROUND_DATA_PATH`
+- `VITE_API_URL`
 
-## Environment
+## How To Play
 
-- `PORT`: HTTP server port, default `8787`
-- `HUMAN_AGENT_PLAYGROUND_DATA_PATH`: session storage path
-- `VITE_API_URL`: web UI API base URL, default `http://127.0.0.1:8787`
+1. Start the server and web app.
+2. Open the UI and click `Create Session`.
+3. Select a piece to inspect legal moves.
+4. Click a highlighted square to play.
+5. Watch the side panel for turn, last move, and activity.
+
+## Human + Agent Shared Play
+
+Humans and agents already play in the same session.
+
+Typical flow:
+
+1. A human creates a session in the UI.
+2. An agent connects to MCP and calls `list_sessions`.
+3. The agent reads the board with `get_game_state`.
+4. The agent checks moves with `xiangqi_get_legal_moves`.
+5. The agent plays with `xiangqi_play_move`.
+6. The UI updates live through SSE.
+
+## MCP Usage
 
 MCP endpoint:
 
-- `http://127.0.0.1:8787/mcp` via Streamable HTTP
-
-## Current MCP tools
-
-- `list_games`
-- `list_sessions`
-- `create_session`
-- `get_game_state`
-- `xiangqi_get_legal_moves`
-- `xiangqi_play_move`
-- `reset_session`
-
-## How to play from the UI
-
-1. Start the server and web app.
-2. Open the web UI and click `Create Session`.
-3. Select a piece on the board to inspect legal targets.
-4. Click a highlighted target square to play a move.
-5. Watch the side panel for the current turn, last move, and recent activity.
-
-## Shared human + agent play
-
-Humans and agents can already play in the same session.
-
-One practical flow is:
-
-1. A human creates or opens a session in the web UI.
-2. The agent connects to the MCP endpoint and discovers the same session with `list_sessions`.
-3. The agent inspects the position with `get_game_state` and `xiangqi_get_legal_moves`.
-4. The agent plays a move with `xiangqi_play_move`.
-5. The web UI updates live through the session stream.
-
-The current implementation only ships one concrete game, Xiangqi, so the move tools are Xiangqi-specific.
-
-## Use the MCP server
-
-This project exposes MCP over Streamable HTTP at:
-
 - `http://127.0.0.1:8787/mcp`
 
-A typical client configuration looks like:
+Example client config:
 
 ```json
 {
@@ -140,25 +89,49 @@ A typical client configuration looks like:
 }
 ```
 
-Recommended tool order for agents:
+Current MCP tools:
+
+- `list_games`
+- `list_sessions`
+- `create_session`
+- `get_game_state`
+- `xiangqi_get_legal_moves`
+- `xiangqi_play_move`
+- `reset_session`
+
+Recommended tool order:
 
 1. `list_games`
 2. `list_sessions` or `create_session`
 3. `get_game_state`
 4. `xiangqi_get_legal_moves`
 5. `xiangqi_play_move`
-6. `get_game_state` again when you need confirmation
 
-## Agent skill
+## Repo Layout
 
-An agent-oriented workflow guide lives in [skills/human-agent-playground-mcp/SKILL.md](./skills/human-agent-playground-mcp/SKILL.md).
+```text
+apps/
+  server/          HTTP API + MCP server
+  web/             React + Vite UI
+packages/
+  core/            shared session contracts
+games/
+  xiangqi/         Xiangqi rules, state, adapter, tests
+docs/
+  ARCHITECTURE.md  platform notes
+skills/
+  human-agent-playground-mcp/
+```
 
-## Roadmap direction
+## Validation
 
-1. Add more games under `games/*`, such as Go or other tabletop systems.
-2. Add a registry-based server executor so each session dispatches to the correct game adapter.
-3. Add agent-vs-agent runners that can drive sessions without a human click loop.
-4. Add session resumption and event replay for the Streamable HTTP transport.
-5. Add richer presence, actor metadata, and watcher tooling on top of the shared session stream.
+```bash
+npm test
+npm run check
+npm run build
+```
 
-Architecture details live in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+## More
+
+- Architecture: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+- Agent skill: [skills/human-agent-playground-mcp/SKILL.md](./skills/human-agent-playground-mcp/SKILL.md)
