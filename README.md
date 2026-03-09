@@ -81,8 +81,32 @@ Typical flow:
 2. An agent connects to MCP and calls `list_sessions`.
 3. The agent reads the board with `get_game_state`.
 4. The agent checks moves with `xiangqi_get_legal_moves`.
-5. The agent plays with `xiangqi_play_move`.
+5. The agent plays with `xiangqi_play_move_and_wait` for long-running shared play.
 6. The UI updates live through SSE.
+
+## How To Prompt An Agent For One Full Game
+
+If you want the agent to keep playing until the session finishes, the prompt must explicitly say that the task is one complete game, not one move.
+
+Recommended prompt shape:
+
+```text
+Create or join one Xiangqi session, make the first move if needed, and then keep using xiangqi_play_move_and_wait until the game finishes. Do not stop after one move cycle. Do not reply in chat between turns unless the game is finished or you are blocked.
+```
+
+When a human is already in the UI, use a prompt like:
+
+```text
+Join my current Xiangqi session as black. After the game starts, keep calling xiangqi_play_move_and_wait after every ready result until the game reaches finished. Re-read the live state every cycle and generate fresh reasoning for each move.
+```
+
+Important details for humans writing the prompt:
+
+- Say `full game`, `complete game`, or `until finished`.
+- Mention `xiangqi_play_move_and_wait` by name.
+- Explicitly say `do not stop after one move`.
+- Explicitly say `do not reply in chat between turns`.
+- If coordination matters, include the `sessionId` and the side the agent should play.
 
 ## MCP Usage
 
@@ -138,6 +162,8 @@ When an agent plays through MCP, use this sequence for every move:
 5. For long-running shared play, prefer `xiangqi_play_move_and_wait`.
 6. Use `xiangqi_play_move` only when you want low-level single-step control.
 
+Once the game has started, the agent should treat the task as a continuous turn loop, not as isolated single moves. If the user asked for a full game, each `ready` result means the next `xiangqi_play_move_and_wait` cycle must begin immediately.
+
 Reasoning rules for `xiangqi_play_move` and `xiangqi_play_move_and_wait`:
 
 - `reasoning.summary` must describe why this move was chosen now.
@@ -161,6 +187,16 @@ Reasoning rules for `xiangqi_play_move` and `xiangqi_play_move_and_wait`:
 
 Prefer `xiangqi_play_move_and_wait` when one agent is supposed to keep a single long-running MCP task alive across many turns.
 If the user asked for a complete game, the agent should keep calling `xiangqi_play_move_and_wait` again immediately after each `ready` result until the status becomes `finished`.
+
+After the game has started, the control loop is:
+
+1. Wait until it is your turn.
+2. Re-read the live state.
+3. Inspect fresh legal moves.
+4. Play exactly one move with fresh reasoning.
+5. Let `xiangqi_play_move_and_wait` hold the wait for the opponent reply.
+6. As soon as it returns `ready`, start the next cycle immediately.
+7. Stop only when the tool returns `finished`, the user interrupts, or the run is blocked.
 
 Use it when one side is controlled by a human in the UI and the other side is controlled by an agent in one long-running MCP session.
 

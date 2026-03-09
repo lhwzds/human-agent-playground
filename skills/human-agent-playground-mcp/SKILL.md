@@ -30,6 +30,8 @@ This project is a shared human-agent board-game table, not a one-shot command ru
 
 For hosts that support long-running MCP task execution, the correct behavior is to keep calling MCP tools inside the same run. Do not treat `wait_for_turn` as the end of the task.
 
+Once a game has started, the objective is not "make one move." The objective is "keep the session running correctly until the game is finished or the user stops it."
+
 ## Why These Rules Exist
 
 - `wait_for_turn` exists so the wait happens inside the MCP server instead of client-side sleep polling.
@@ -40,6 +42,7 @@ For hosts that support long-running MCP task execution, the correct behavior is 
 - `reasoning` must be generated for the current position because the server stores reasoning but does not author it for the agent.
 - Cached explanations are misleading because they describe a generic opening idea instead of the actual current board.
 - Multi-move plans are unsafe in shared play because the human can change the position before the later moves happen.
+- Humans often prompt imprecisely. If the user says they want a full game, interpret that as a continuous loop until `finished`, not as permission to stop after one successful cycle.
 
 ## Recommended workflow
 
@@ -100,6 +103,35 @@ For hosts that support long-running MCP task execution, the correct behavior is 
 - NEVER stop after one successful cycle when the user explicitly asked for a full game.
 
 ## Practical patterns
+
+### Once the game has started
+
+After a session exists and the side assignment is clear, use this mental model:
+
+1. The current tool call is only one cycle in a longer match.
+2. `xiangqi_play_move_and_wait` means:
+   - play one move now
+   - wait for exactly one opponent reply inside the MCP server
+   - return only when it is your turn again, the game has finished, or the timeout has expired
+3. A `ready` result is not a stopping point. It means the next cycle must begin now.
+4. If the user asked for a complete game, keep chaining the next `xiangqi_play_move_and_wait` call immediately after every `ready` result until `finished`.
+5. Do not chat between cycles. Re-read the live state, inspect legal moves, generate fresh reasoning, and continue.
+
+### How humans should prompt the agent
+
+Good prompts explicitly say all of the following:
+
+- this is one full game
+- keep using `xiangqi_play_move_and_wait`
+- do not stop after one move
+- do not answer in chat between turns
+- stop only when the game is `finished` or blocked
+
+Example prompt:
+
+```text
+Create or join one Xiangqi session, make the first move if needed, and then keep using xiangqi_play_move_and_wait until the game finishes. Do not stop after one move cycle. Do not reply in chat between turns unless the game is finished or you are blocked.
+```
 
 ### Join a human's session
 

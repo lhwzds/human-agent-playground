@@ -81,8 +81,32 @@ API_PORT=8787 WEB_PORT=4173 HUMAN_AGENT_PLAYGROUND_DATA_PATH=/tmp/hap.json bash 
 2. Agent 通过 MCP 调用 `list_sessions` 找到这局。
 3. Agent 用 `get_game_state` 读取当前局面。
 4. Agent 用 `xiangqi_get_legal_moves` 检查合法走法。
-5. Agent 用 `xiangqi_play_move` 落子。
+5. 长时间共享对局时，Agent 应优先用 `xiangqi_play_move_and_wait` 落子。
 6. UI 会通过 SSE 实时刷新，立即看到这一步。
+
+## 人类如何 Prompt Agent 完成一整局
+
+如果你希望 agent 从开局一路下到终局，prompt 里一定要明确说明这是“一整局游戏”，不是“只下一步”。
+
+推荐 prompt 结构：
+
+```text
+Create or join one Xiangqi session, make the first move if needed, and then keep using xiangqi_play_move_and_wait until the game finishes. Do not stop after one move cycle. Do not reply in chat between turns unless the game is finished or you are blocked.
+```
+
+如果人类已经在 UI 里准备好了一局，可以这样说：
+
+```text
+Join my current Xiangqi session as black. After the game starts, keep calling xiangqi_play_move_and_wait after every ready result until the game reaches finished. Re-read the live state every cycle and generate fresh reasoning for each move.
+```
+
+人类写 prompt 时最好明确写出这些约束：
+
+- 写清楚 `full game`、`complete game` 或 `until finished`
+- 直接点名 `xiangqi_play_move_and_wait`
+- 明确说 `do not stop after one move`
+- 明确说 `do not reply in chat between turns`
+- 如果需要精确协作，写上 `sessionId` 和 agent 要执的颜色
 
 ## MCP 使用方式
 
@@ -138,6 +162,8 @@ MCP 端点：
 5. 如果你要维持一个长时间运行的共享回合循环，优先调用 `xiangqi_play_move_and_wait`。
 6. 如果你需要底层单步控制，再调用 `xiangqi_play_move`。
 
+一旦对局已经开始，agent 就应该把任务理解成连续的回合循环，而不是彼此独立的单步任务。如果用户要求的是完整对局，那么每次得到 `ready` 后都应该立刻开始下一次 `xiangqi_play_move_and_wait` 周期。
+
 `xiangqi_play_move.reasoning` 和 `xiangqi_play_move_and_wait.reasoning` 的要求：
 
 - `reasoning.summary` 必须解释“为什么现在走这一步”。
@@ -161,6 +187,16 @@ MCP 端点：
 
 如果你的目标是让一个 agent 在单个长任务里持续和 UI 中的人类轮流下棋，优先使用 `xiangqi_play_move_and_wait`。
 如果用户要的是一局完整的游戏，那么每次它返回 `ready` 后，都应该立刻再次调用下一次 `xiangqi_play_move_and_wait`，直到结果变成 `finished`。
+
+对局开始之后，正确的控制循环是：
+
+1. 等到轮到自己。
+2. 重新读取实时局面。
+3. 检查最新合法走法。
+4. 用现生成 reasoning 走出这一步。
+5. 让 `xiangqi_play_move_and_wait` 在 server 内部继续等对手回应。
+6. 它一返回 `ready`，就立刻开始下一次循环。
+7. 只有在结果变成 `finished`、用户中断、或任务被阻塞时才停止。
 
 它专门用来支持这种模式：
 
