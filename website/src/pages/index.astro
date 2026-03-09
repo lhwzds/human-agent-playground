@@ -1,0 +1,164 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+import DemoFrame from '../components/DemoFrame.astro'
+import {
+  entryPoints,
+  featureCards,
+  promptExamples,
+  setupSteps,
+  siteMetadata,
+  supportedAgents,
+  workflowSteps,
+} from '../content/site-content'
+---
+
+<BaseLayout title={siteMetadata.title} description={siteMetadata.description}>
+  <main class="page-shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Human Agent Playground</p>
+        <h1>One shared game table for humans and AI agent apps.</h1>
+        <p class="hero-summary">
+          Use one local UI, one HTTP API, and one MCP endpoint to let humans and
+          agent clients play on the same Xiangqi board without losing sync.
+        </p>
+
+        <div class="hero-actions">
+          <a class="primary-button" href="#demo">View the board</a>
+          <a class="secondary-button" href={siteMetadata.repositoryUrl} target="_blank" rel="noreferrer">
+            Open GitHub
+          </a>
+        </div>
+
+        <ul class="hero-badges" aria-label="Supported hosts">
+          {supportedAgents.map((agent) => (
+            <li>{agent}</li>
+          ))}
+        </ul>
+      </div>
+
+      <aside class="hero-panel">
+        <div class="panel-card">
+          <p class="panel-label">Live session shape</p>
+          <ul>
+            <li>Web UI for humans</li>
+            <li>HTTP API for local tooling</li>
+            <li>MCP over Streamable HTTP for agents</li>
+          </ul>
+        </div>
+
+        <div class="panel-card panel-card-accent">
+          <p class="panel-label">Core promise</p>
+          <p>{siteMetadata.tagline}</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="content-section">
+      <div class="section-heading">
+        <p class="section-kicker">Live Demo</p>
+        <h2>Embed the real board, not a static mockup.</h2>
+        <p>
+          The landing page can embed the running application through an iframe.
+          When the live URL is not configured yet, it falls back to a real session capture.
+        </p>
+      </div>
+      <DemoFrame demoUrl={siteMetadata.demoUrl} />
+    </section>
+
+    <section class="content-section">
+      <div class="section-heading">
+        <p class="section-kicker">Three Entry Points</p>
+        <h2>Every agent and every human lands on the same match state.</h2>
+      </div>
+      <div class="card-grid">
+        {entryPoints.map((item) => (
+          <article class="info-card">
+            <h3>{item.title}</h3>
+            <p>{item.description}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="content-section split-section">
+      <div>
+        <div class="section-heading">
+          <p class="section-kicker">How It Works</p>
+          <h2>Start one session and keep the full game alive.</h2>
+        </div>
+        <ol class="step-list">
+          {workflowSteps.map((step) => (
+            <li>{step}</li>
+          ))}
+        </ol>
+      </div>
+
+      <div class="step-panel">
+        <p class="panel-label">Agent loop</p>
+        <ol>
+          <li>Read the live state.</li>
+          <li>Inspect legal Xiangqi moves.</li>
+          <li>Play with <code>xiangqi_play_move_and_wait</code>.</li>
+          <li>Continue until the session reaches <code>finished</code>.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="content-section">
+      <div class="section-heading">
+        <p class="section-kicker">Setup</p>
+        <h2>Built for local agent hosts that already speak MCP.</h2>
+      </div>
+      <div class="card-grid">
+        {setupSteps.map((item) => (
+          <article class="info-card">
+            <h3>{item.title}</h3>
+            <p>{item.body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="content-section">
+      <div class="section-heading">
+        <p class="section-kicker">Prompting</p>
+        <h2>Ask the agent for a full game, not a single move.</h2>
+      </div>
+      <div class="prompt-grid">
+        {promptExamples.map((example) => (
+          <article class="prompt-card">
+            <h3>{example.title}</h3>
+            <pre>{example.body}</pre>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="content-section">
+      <div class="section-heading">
+        <p class="section-kicker">Why This Repo</p>
+        <h2>A local-first playground for serious human-plus-agent play.</h2>
+      </div>
+      <div class="card-grid">
+        {featureCards.map((item) => (
+          <article class="info-card">
+            <h3>{item.title}</h3>
+            <p>{item.body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <div>
+        <p class="eyebrow">Domain</p>
+        <strong>{siteMetadata.domain}</strong>
+      </div>
+      <div class="footer-links">
+        <a href={siteMetadata.repositoryUrl} target="_blank" rel="noreferrer">GitHub</a>
+        <a href="#demo">Demo</a>
+      </div>
+    </footer>
+  </main>
+</BaseLayout>

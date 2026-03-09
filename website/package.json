@@ -1,0 +1,24 @@
+{
+  "name": "@human-agent-playground/website",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --host 127.0.0.1 --port 4321",
+    "build": "astro build",
+    "check": "astro check",
+    "preview": "astro preview --host 127.0.0.1 --port 4322",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "astro": "^5.4.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@playwright/test": "^1.54.2",
+    "@types/node": "^24.10.1",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
