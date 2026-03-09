@@ -89,6 +89,7 @@ describe('Streamable HTTP MCP server', () => {
         'reset_session',
         'xiangqi_get_legal_moves',
         'xiangqi_play_move',
+        'xiangqi_play_move_and_wait',
       ]),
     )
     expect(
@@ -106,6 +107,21 @@ describe('Streamable HTTP MCP server', () => {
         category: 'gameplay',
         gameId: 'xiangqi',
       }),
+    )
+    expect(tools.tools.find((tool) => tool.name === 'wait_for_turn')?.description).toContain('IMPORTANT')
+    expect(tools.tools.find((tool) => tool.name === 'wait_for_turn')?.description).toContain('NEVER')
+    expect(tools.tools.find((tool) => tool.name === 'xiangqi_play_move')?.description).toContain(
+      'NEVER stop to send a chat reply before moving',
+    )
+    expect(tools.tools.find((tool) => tool.name === 'xiangqi_play_move_and_wait')?.description).toContain(
+      'IMPORTANT',
+    )
+    expect(tools.tools.find((tool) => tool.name === 'xiangqi_play_move_and_wait')?.description).toContain('NEVER')
+    expect(tools.tools.find((tool) => tool.name === 'xiangqi_play_move_and_wait')?.description).toContain(
+      'opponent completes exactly one reply',
+    )
+    expect(tools.tools.find((tool) => tool.name === 'xiangqi_play_move_and_wait')?.description).toContain(
+      'full game',
     )
 
     const searchResult = extractPayload(
@@ -125,6 +141,7 @@ describe('Streamable HTTP MCP server', () => {
     expect(searchResult.tools.map((tool) => tool.name)).toEqual([
       'xiangqi_get_legal_moves',
       'xiangqi_play_move',
+      'xiangqi_play_move_and_wait',
     ])
 
     const created = extractPayload(
@@ -223,6 +240,90 @@ describe('Streamable HTTP MCP server', () => {
     expect(waitResult.status).toBe('ready')
     expect(waitResult.session.state.turn).toBe('black')
     expect(waitResult.event).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+      }),
+    )
+
+    const secondCreated = extractPayload(
+      await client.callTool({
+        name: 'create_session',
+        arguments: {
+          gameId: 'xiangqi',
+        },
+      }),
+    ) as {
+      id: string
+      state: { turn: string }
+    }
+
+    setTimeout(() => {
+      void service.playMove(secondCreated.id, { from: 'a7', to: 'a6' })
+    }, 20)
+
+    const playAndWaitResult = extractPayload(
+      await client.callTool({
+        name: 'xiangqi_play_move_and_wait',
+        arguments: {
+          sessionId: secondCreated.id,
+          from: 'a4',
+          to: 'a5',
+          timeoutMs: 5_000,
+          reasoning: {
+            summary: 'Advance the pawn and keep the move cycle inside one MCP tool call.',
+            reasoningSteps: [
+              'The pawn push is legal and claims space immediately.',
+              'Using the combined play-and-wait tool avoids breaking the shared turn loop.',
+            ],
+            confidence: 0.7,
+          },
+        },
+      }),
+    ) as {
+      status: string
+      playedSession: {
+        state: {
+          turn: string
+          lastMove: { from: string; to: string; side: string }
+        }
+      }
+      playedEvent: {
+        kind: string
+      } | null
+      session: {
+        state: {
+          turn: string
+          lastMove: { from: string; to: string; side: string }
+        }
+      }
+      event: {
+        kind: string
+      } | null
+    }
+
+    expect(playAndWaitResult.status).toBe('ready')
+    expect(playAndWaitResult.playedSession.state.turn).toBe('black')
+    expect(playAndWaitResult.playedSession.state.lastMove).toEqual(
+      expect.objectContaining({
+        from: 'a4',
+        to: 'a5',
+        side: 'red',
+      }),
+    )
+    expect(playAndWaitResult.playedEvent).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+      }),
+    )
+    expect(playAndWaitResult.session.state.turn).toBe('red')
+    expect(playAndWaitResult.session.state.lastMove).toEqual(
+      expect.objectContaining({
+        from: 'a7',
+        to: 'a6',
+        side: 'black',
+      }),
+    )
+    expect(playAndWaitResult.event).toEqual(
       expect.objectContaining({
         kind: 'move_played',
       }),

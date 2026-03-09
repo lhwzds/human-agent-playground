@@ -44,6 +44,15 @@ interface WaitForTurnResult {
   event: SessionEvent | null
 }
 
+interface PlayMoveAndWaitOptions {
+  timeoutMs?: number
+}
+
+interface PlayMoveAndWaitResult extends WaitForTurnResult {
+  playedSession: GameSession
+  playedEvent: SessionEvent | null
+}
+
 interface PendingWaitForTurnResult {
   status: WaitForTurnResult['status'] | null
   session: GameSession
@@ -216,6 +225,42 @@ export class GameService {
         })
       }, timeoutMs)
     })
+  }
+
+  async playMoveAndWait(
+    sessionId: string,
+    input: unknown,
+    options: PlayMoveAndWaitOptions = {},
+  ): Promise<PlayMoveAndWaitResult> {
+    const playedSession = await this.playMove(sessionId, input)
+    const playedEvent = getLatestSessionEvent(playedSession)
+    const playedStatus = readSessionStatus(playedSession)
+    const moverSide = readLastMoveSide(playedSession)
+
+    if (playedStatus === 'finished') {
+      return {
+        status: 'finished',
+        session: playedSession,
+        event: playedEvent,
+        playedSession,
+        playedEvent,
+      }
+    }
+
+    if (!moverSide) {
+      throw new Error('Unable to determine the side that just moved')
+    }
+
+    const waitResult = await this.waitForTurn(sessionId, moverSide, {
+      afterEventId: playedEvent?.id,
+      timeoutMs: options.timeoutMs,
+    })
+
+    return {
+      ...waitResult,
+      playedSession,
+      playedEvent,
+    }
   }
 
   subscribeSession(sessionId: string, listener: SessionListener): () => void {
@@ -435,6 +480,11 @@ function readSessionTurn(session: GameSession) {
 function readSessionStatus(session: GameSession) {
   const state = session.state as { status?: unknown }
   return typeof state.status === 'string' ? state.status : null
+}
+
+function readLastMoveSide(session: GameSession) {
+  const state = session.state as { lastMove?: { side?: unknown } | null }
+  return typeof state.lastMove?.side === 'string' ? state.lastMove.side : null
 }
 
 function resolveActorContext(

@@ -38,6 +38,18 @@ npm --prefix apps/server run start
 npm --prefix apps/web run start
 ```
 
+也可以直接一条命令启动：
+
+```bash
+bash scripts/dev.sh
+```
+
+如果你要自己指定端口或数据文件路径，可以这样：
+
+```bash
+API_PORT=8787 WEB_PORT=4173 HUMAN_AGENT_PLAYGROUND_DATA_PATH=/tmp/hap.json bash scripts/dev.sh
+```
+
 默认本地地址：
 
 - UI：`http://127.0.0.1:4173`
@@ -101,6 +113,7 @@ MCP 端点：
 - `wait_for_turn`
 - `xiangqi_get_legal_moves`
 - `xiangqi_play_move`
+- `xiangqi_play_move_and_wait`
 - `reset_session`
 
 现在 `tools/list` 返回的工具信息里也会带上分类和标签元数据，`search_tools` 支持按 `query`、`category`、`gameId` 和 `tags` 过滤。
@@ -112,7 +125,7 @@ MCP 端点：
 3. `list_sessions` 或 `create_session`
 4. `get_game_state`
 5. `xiangqi_get_legal_moves`
-6. `xiangqi_play_move`
+6. 长时间共享对局优先用 `xiangqi_play_move_and_wait`，单步控制再用 `xiangqi_play_move`
 
 ## Agent 落子规则
 
@@ -122,9 +135,10 @@ MCP 端点：
 2. 如果还没轮到自己，只调用一次 `wait_for_turn`，并在它返回 `ready` 后立刻停止等待。
 3. `ready` 之后重新调用 `get_game_state`。
 4. 用 `xiangqi_get_legal_moves` 作为合法走法的唯一依据。
-5. 调用 `xiangqi_play_move` 只提交 1 步，并附带针对当前局面的现生成 reasoning。
+5. 如果你要维持一个长时间运行的共享回合循环，优先调用 `xiangqi_play_move_and_wait`。
+6. 如果你需要底层单步控制，再调用 `xiangqi_play_move`。
 
-`xiangqi_play_move.reasoning` 的要求：
+`xiangqi_play_move.reasoning` 和 `xiangqi_play_move_and_wait.reasoning` 的要求：
 
 - `reasoning.summary` 必须解释“为什么现在走这一步”。
 - `reasoning.reasoningSteps` 必须至少包含 1 条针对当前局面的简短推理步骤。
@@ -132,10 +146,23 @@ MCP 端点：
 - 不要复用固定模板解释。
 - 不要把未来多步计划伪装成已经决定好的结论。
 - 在没有重新读局面并走出这一步之前，不要再次调用 `wait_for_turn`。
+- IMPORTANT：`wait_for_turn` 一旦返回 `ready`，就要立刻继续 MCP 调用。
+- NEVER：在你真正走出这 1 步或者明确决定停止之前，不要先回复聊天。
 
 ## 不依赖外部轮询的轮流对局
 
-`wait_for_turn` 是一个阻塞式 MCP 工具，专门用来支持这种模式：
+`wait_for_turn` 是这个模式的底层阻塞式 MCP 工具。
+
+`xiangqi_play_move_and_wait` 是更高一层的常用工具：
+
+- 它先立即走出当前这一步
+- 然后继续在 MCP server 内部等待，直到对手正好完成下一步回复
+- 只有在回合重新切回同一方、对局结束、或等待超时的时候才返回
+
+如果你的目标是让一个 agent 在单个长任务里持续和 UI 中的人类轮流下棋，优先使用 `xiangqi_play_move_and_wait`。
+如果用户要的是一局完整的游戏，那么每次它返回 `ready` 后，都应该立刻再次调用下一次 `xiangqi_play_move_and_wait`，直到结果变成 `finished`。
+
+它专门用来支持这种模式：
 
 - 人类在 UI 中下棋
 - Agent 在同一个长时间运行的 MCP 会话里等待自己的回合
@@ -152,12 +179,16 @@ MCP 端点：
    - `timeoutMs`
 4. 当 `wait_for_turn` 返回 `status: "ready"` 后，再调用一次 `get_game_state`。
 5. 用 `xiangqi_get_legal_moves` 检查当前合法走法。
-6. 用 `xiangqi_play_move` 精确地下 1 步，并附带这一步现生成的 reasoning。
-7. 在同一个长时间运行的 agent 任务里重复这个流程。
+6. 优先调用 `xiangqi_play_move_and_wait`，并附带这一步现生成的 reasoning。
+7. 当它返回 `ready` 时，重新读取局面，并立刻调用下一次走子工具。
+8. 如果用户要求的是完整对局，就持续重复第 7 步，直到结果变成 `finished`。
+9. 只有在你需要把“走子”和“等待”拆开调试时，才改用 `xiangqi_play_move`。
 
 说明：
 
 - `wait_for_turn` 的等待发生在 MCP server 内部，目的是替代客户端侧的 `sleep` 循环。
+- `xiangqi_play_move_and_wait` 会把“走一步并等到下次自己再走”的完整回合周期放进一次 MCP 调用里，减少 agent 在两回合之间先回复聊天而打断循环的概率。
+- 实际上，一次 `xiangqi_play_move_and_wait` 的含义就是：先走一步，等对手回应一步，然后在再次轮到自己时返回。
 - 这种模式最适合能够让单个回复或单个任务持续运行并连续调用 MCP 工具的 agent 宿主。
 - 这个工具可能返回三种结果：
   - `ready`：已经轮到指定一方

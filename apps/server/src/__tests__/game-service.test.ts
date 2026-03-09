@@ -169,4 +169,55 @@ describe('GameService', () => {
       }),
     )
   })
+
+  it('plays one move and then waits until the same side can move again', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    const service = new GameService(join(directory, 'sessions.json'))
+    const session = await service.createSession({ gameId: 'xiangqi' })
+
+    const playAndWaitPromise = service.playMoveAndWait(
+      session.id,
+      {
+        from: 'a4',
+        to: 'a5',
+      },
+      {
+        timeoutMs: 5_000,
+      },
+    )
+
+    setTimeout(() => {
+      void service.playMove(session.id, { from: 'a7', to: 'a6' })
+    }, 20)
+
+    const result = await playAndWaitPromise
+
+    expect(result.status).toBe('ready')
+    expect(result.playedSession.state.turn).toBe('black')
+    expect(result.playedSession.state.lastMove).toEqual(
+      expect.objectContaining({
+        from: 'a4',
+        to: 'a5',
+        side: 'red',
+      }),
+    )
+    expect(result.playedEvent).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+      }),
+    )
+    expect(result.session.state.turn).toBe('red')
+    expect(result.session.state.lastMove).toEqual(
+      expect.objectContaining({
+        from: 'a7',
+        to: 'a6',
+        side: 'black',
+      }),
+    )
+    expect(result.event).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+      }),
+    )
+  })
 })

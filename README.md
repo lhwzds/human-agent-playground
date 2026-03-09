@@ -38,6 +38,18 @@ npm --prefix apps/server run start
 npm --prefix apps/web run start
 ```
 
+Single-command local startup:
+
+```bash
+bash scripts/dev.sh
+```
+
+Override ports or data path when needed:
+
+```bash
+API_PORT=8787 WEB_PORT=4173 HUMAN_AGENT_PLAYGROUND_DATA_PATH=/tmp/hap.json bash scripts/dev.sh
+```
+
 Default local endpoints:
 
 - UI: `http://127.0.0.1:4173`
@@ -101,6 +113,7 @@ Current MCP tools:
 - `wait_for_turn`
 - `xiangqi_get_legal_moves`
 - `xiangqi_play_move`
+- `xiangqi_play_move_and_wait`
 - `reset_session`
 
 Tool metadata now includes category and tags in `tools/list`, and `search_tools` can filter by `query`, `category`, `gameId`, and `tags`.
@@ -112,7 +125,7 @@ Recommended tool order:
 3. `list_sessions` or `create_session`
 4. `get_game_state`
 5. `xiangqi_get_legal_moves`
-6. `xiangqi_play_move`
+6. `xiangqi_play_move_and_wait` for long-running shared play, or `xiangqi_play_move` for single-step control
 
 ## Agent Move Rules
 
@@ -122,9 +135,10 @@ When an agent plays through MCP, use this sequence for every move:
 2. If it is not your turn, call `wait_for_turn` once and stop waiting as soon as it returns `ready`.
 3. Re-read `get_game_state` after `ready`.
 4. Use `xiangqi_get_legal_moves` as the source of truth for legality.
-5. Call `xiangqi_play_move` with exactly one move and a fresh reasoning object for that exact position.
+5. For long-running shared play, prefer `xiangqi_play_move_and_wait`.
+6. Use `xiangqi_play_move` only when you want low-level single-step control.
 
-Reasoning rules for `xiangqi_play_move`:
+Reasoning rules for `xiangqi_play_move` and `xiangqi_play_move_and_wait`:
 
 - `reasoning.summary` must describe why this move was chosen now.
 - `reasoning.reasoningSteps` must contain at least one short step about the current position.
@@ -132,10 +146,21 @@ Reasoning rules for `xiangqi_play_move`:
 - Do not reuse stock explanations.
 - Do not include a multi-move plan as if it were already decided.
 - Do not call `wait_for_turn` again before you either move once or decide to stop.
+- IMPORTANT: when `wait_for_turn` returns `ready`, continue with MCP tool calls immediately.
+- NEVER send a chat reply before you have either played exactly one move or explicitly decided to stop.
 
 ## Turn-Based Shared Play Without External Polling
 
-`wait_for_turn` is a blocking MCP tool for turn-based shared play.
+`wait_for_turn` is the low-level blocking MCP tool for turn-based shared play.
+
+`xiangqi_play_move_and_wait` is the higher-level version for the common case:
+
+- it plays one move now
+- it then keeps waiting inside the MCP server while the opponent makes exactly one reply
+- it returns only when the turn comes back to the same side, the game finishes, or the timeout expires
+
+Prefer `xiangqi_play_move_and_wait` when one agent is supposed to keep a single long-running MCP task alive across many turns.
+If the user asked for a complete game, the agent should keep calling `xiangqi_play_move_and_wait` again immediately after each `ready` result until the status becomes `finished`.
 
 Use it when one side is controlled by a human in the UI and the other side is controlled by an agent in one long-running MCP session.
 
@@ -150,12 +175,16 @@ Recommended flow:
    - `timeoutMs`
 4. When `wait_for_turn` returns `status: "ready"`, call `get_game_state` again.
 5. Inspect legal moves with `xiangqi_get_legal_moves`.
-6. Play exactly one move with `xiangqi_play_move`, including fresh move-specific reasoning.
-7. Repeat the same pattern in the same long-running agent run.
+6. Prefer `xiangqi_play_move_and_wait` with fresh move-specific reasoning.
+7. When it returns `ready`, re-read the state and immediately call the next move tool.
+8. If the user asked for a full game, keep repeating step 7 until the result becomes `finished`.
+9. Use `xiangqi_play_move` only when you need to separate play and wait for debugging or fine-grained control.
 
 Notes:
 
 - `wait_for_turn` waits inside the MCP server. It is meant to replace client-side `sleep` loops.
+- `xiangqi_play_move_and_wait` keeps the play-and-wait cycle inside one MCP tool call so the host is less likely to break the loop by replying in chat between turns.
+- In practice, one `xiangqi_play_move_and_wait` call means: play one move, wait for the opponent to answer once, then return when it is your turn again.
 - This pattern works best in hosts that allow one reply or one task to keep running while it repeatedly calls MCP tools.
 - The tool may return:
   - `ready`: the expected side may move now

@@ -15,6 +15,32 @@ The local MCP endpoint is:
 
 The current game implementation is Xiangqi. Shared sessions are visible from both the web UI and MCP tools.
 
+## Context
+
+This project is a shared human-agent board-game table, not a one-shot command runner.
+
+- The human may act in the web UI while the agent acts through MCP.
+- Both sides write into the same session and see the same board state.
+- In turn-based shared play, one move cycle is:
+  1. wait for your turn
+  2. re-read the live state
+  3. inspect legal moves
+  4. play exactly one move
+- The move cycle is not complete until the move is played or the agent explicitly decides to stop.
+
+For hosts that support long-running MCP task execution, the correct behavior is to keep calling MCP tools inside the same run. Do not treat `wait_for_turn` as the end of the task.
+
+## Why These Rules Exist
+
+- `wait_for_turn` exists so the wait happens inside the MCP server instead of client-side sleep polling.
+- The web UI and MCP are two views over the same session, so the agent must always re-read state after waiting.
+- If the agent replies in chat immediately after `wait_for_turn` returns `ready`, the turn loop is broken and the user has to prompt again.
+- If the user asked for a complete game, the agent should not stop after one move cycle. It should keep chaining the next move cycle until the game finishes or the user interrupts it.
+- `xiangqi_get_legal_moves` is the source of truth for move legality, so the agent must not invent moves from memory.
+- `reasoning` must be generated for the current position because the server stores reasoning but does not author it for the agent.
+- Cached explanations are misleading because they describe a generic opening idea instead of the actual current board.
+- Multi-move plans are unsafe in shared play because the human can change the position before the later moves happen.
+
 ## Recommended workflow
 
 1. Confirm the playground server is running.
@@ -25,8 +51,9 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 6. Use `get_game_state` before making decisions.
 7. If the task is turn-based shared play, use `wait_for_turn` instead of client-side sleep loops.
 8. Use `xiangqi_get_legal_moves` before every move. Provide `from` when you want to inspect one piece.
-9. Choose a move from the returned legal move set and call `xiangqi_play_move` with fresh reasoning for that exact move.
-10. Re-check `get_game_state` after the move when you need confirmation or a summary.
+9. In long-running shared play, prefer `xiangqi_play_move_and_wait` so the play-and-wait cycle stays inside one MCP tool call.
+10. Use `xiangqi_play_move` only when you intentionally want separate low-level control over play and wait.
+11. Re-check `get_game_state` after the move when you need confirmation or a summary.
 
 ## Tool guide
 
@@ -38,6 +65,7 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 - `wait_for_turn`: block inside the MCP server until the session advances to the expected turn
 - `xiangqi_get_legal_moves`: inspect legal Xiangqi moves
 - `xiangqi_play_move`: play one legal Xiangqi move
+- `xiangqi_play_move_and_wait`: play one legal Xiangqi move, wait for exactly one opponent reply, and return when that same side may move again
 - `reset_session`: reset a session to the default opening position
 
 ## Shared play rules
@@ -48,6 +76,8 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 - The web UI updates live after MCP moves, so a human can watch the same board while the agent plays.
 - Prefer `search_tools` before guessing tool names on servers that expose many game-specific tools.
 - In turn-based shared play, prefer `wait_for_turn` over client-side `sleep` polling.
+- In long-running shared play, prefer `xiangqi_play_move_and_wait` over manually chaining `xiangqi_play_move` and `wait_for_turn`.
+- Treat one `xiangqi_play_move_and_wait` call as one full move cycle: your move, one opponent reply, then your turn again.
 - When `wait_for_turn` returns `ready`, stop waiting immediately, re-read the state, and decide one move now.
 
 ## Guardrails
@@ -57,10 +87,17 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 - Do not assume a session is new. Read `get_game_state` before acting.
 - Use `reset_session` only when the user explicitly wants to restart the game.
 - Never queue multiple future moves.
-- Every `xiangqi_play_move` call must include freshly written reasoning for the current position.
+- Every `xiangqi_play_move` or `xiangqi_play_move_and_wait` call must include freshly written reasoning for the current position.
 - The server stores agent reasoning but does not author it on the agent's behalf.
 - The reasoning must explain only the current move, not a whole future line.
 - Include at least one `reasoningSteps` item in every agent move.
+- IMPORTANT: when `wait_for_turn` returns `ready`, continue with MCP tool calls immediately.
+- NEVER send a chat reply before you have either played exactly one move or explicitly decided to stop.
+- NEVER treat `wait_for_turn` returning `ready` as permission to stop the current run.
+- IMPORTANT: when you want one tool call to cover both the move and the next wait, use `xiangqi_play_move_and_wait`.
+- NEVER treat `xiangqi_play_move_and_wait` returning after the move is submitted as acceptable behavior; it must wait for the next cycle or a terminal result.
+- IMPORTANT: if the user asked for a complete game, start the next `xiangqi_play_move_and_wait` cycle immediately after every `ready` result.
+- NEVER stop after one successful cycle when the user explicitly asked for a full game.
 
 ## Practical patterns
 
@@ -72,7 +109,8 @@ The current game implementation is Xiangqi. Shared sessions are visible from bot
 4. If it is not your turn, store the latest event id and call `wait_for_turn`.
 5. When `wait_for_turn` returns `ready`, call `get_game_state` again.
 6. Call `xiangqi_get_legal_moves`.
-7. Play exactly one move with `xiangqi_play_move`, including fresh move-specific reasoning.
+7. Prefer `xiangqi_play_move_and_wait` with fresh move-specific reasoning.
+8. Use `xiangqi_play_move` only when you need low-level debugging control.
 
 ### Start a fresh session
 
@@ -89,10 +127,14 @@ Use this pattern when the host can keep one task or one reply alive for repeated
 2. Read the latest `session.events` item and save its `id` as `afterEventId`.
 3. If the current turn is not the agent's side, call `wait_for_turn`.
 4. When `wait_for_turn` returns:
-   - `ready`: continue and make one move
+   - `ready`: continue with MCP immediately and make one move
    - `finished`: stop
    - `timeout`: decide whether to stop or wait again
 5. Re-read `get_game_state`.
 6. Call `xiangqi_get_legal_moves`.
-7. Play exactly one move with `xiangqi_play_move`, including fresh reasoning for that move.
-8. Repeat only while the host still allows the same task to continue running.
+7. Prefer `xiangqi_play_move_and_wait`, including fresh reasoning for that move, so the tool itself covers the next wait.
+8. Treat one `xiangqi_play_move_and_wait` result with `status: "ready"` as: your move was played, the opponent answered once, and it is your turn again now.
+9. Re-read `get_game_state`, inspect fresh legal moves, and call the next `xiangqi_play_move_and_wait` immediately.
+10. If the user asked for a complete game, keep repeating step 9 until the result becomes `finished`.
+11. Use `xiangqi_play_move` only if you intentionally want to split play and wait into separate MCP calls.
+12. NEVER answer in chat between step 4 and step 10.

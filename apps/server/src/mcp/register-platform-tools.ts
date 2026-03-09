@@ -145,7 +145,7 @@ export function createPlatformToolCatalog(
       name: 'wait_for_turn',
       title: 'Wait For Turn',
       description:
-        'Wait until a session advances and it becomes the expected side’s turn, or until the game finishes or the timeout expires. When this returns ready, stop waiting, re-read the latest state, and play exactly one move before waiting again.',
+        'Wait until a session advances and it becomes the expected side’s turn, or until the game finishes or the timeout expires. IMPORTANT: when this returns ready, do not send a chat reply first. NEVER answer the user before you continue with MCP tool calls. Stop waiting, re-read the latest state, and continue until you either play exactly one move or decide to stop.',
       category: 'session',
       tags: ['platform', 'sessions', 'wait', 'turn'],
       inputSchema: {
@@ -189,7 +189,7 @@ export function createPlatformToolCatalog(
         })
 
         return textResult(
-          'Wait for turn result. If the status is ready, fetch the current state now and play exactly one move before waiting again.',
+          'Wait for turn result. IMPORTANT: if the status is ready, NEVER reply in chat yet. Fetch the current state now and continue with MCP tool calls until you have either played exactly one move or decided to stop.',
           result,
         )
       },
