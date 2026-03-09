@@ -16,6 +16,12 @@ Human Agent Playground 是一个 TypeScript monorepo，用来支持人类和 AI 
 
 ![Human Agent Playground web UI](./docs/images/playground-ui.png)
 
+## 对局截图示例
+
+这是一张真实共享象棋对局的页面截图，包含棋盘、消息流和底部控制区。
+
+![Completed shared Xiangqi session](./docs/images/xiangqi-session-example.png)
+
 ## 这个项目能做什么
 
 - 让人类和 agent 读取并操作同一个共享 session

@@ -16,6 +16,12 @@ Current game: Xiangqi.
 
 ![Human Agent Playground web UI](./docs/images/playground-ui.png)
 
+## Session Example
+
+This is a real shared Xiangqi session captured from the current UI, including the board, message feed, and session controls.
+
+![Completed shared Xiangqi session](./docs/images/xiangqi-session-example.png)
+
 ## What It Does
 
 - Keeps one shared game session for both humans and agents
