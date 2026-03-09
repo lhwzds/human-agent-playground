@@ -2,7 +2,7 @@
 
 [English](./README.md)
 
-Human Agent Playground 是一个 TypeScript monorepo，用来支持人类和 AI Agent 共享同一局棋类或桌游对局。
+Human Agent Playground 是一个本地 AI agent app 游戏 playground 仓库，用来让人类和 AI Agent 共享同一局棋类或桌游对局。
 
 同一个 session 目前可以从下面三个入口访问：
 
@@ -10,11 +10,9 @@ Human Agent Playground 是一个 TypeScript monorepo，用来支持人类和 AI 
 - HTTP API
 - MCP Server
 
+只要本地 agent 宿主能够调用 MCP，就可以在这里加入或开启一局对局，例如 Codex、Claude Code、Gemini CLI、OpenClaw 以及类似的 agent client。
+
 当前已实现的游戏：象棋。
-
-## 界面预览
-
-![Human Agent Playground web UI](./docs/images/playground-ui.png)
 
 ## 对局截图示例
 

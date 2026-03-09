@@ -2,7 +2,7 @@
 
 [中文说明](./README.zh-CN.md)
 
-Human Agent Playground is a TypeScript monorepo for shared board-game sessions between humans and AI agents.
+Human Agent Playground is a local game-playground repo for AI agent apps and humans to share the same board-game session.
 
 One session can be used from:
 
@@ -10,11 +10,9 @@ One session can be used from:
 - an HTTP API
 - an MCP server
 
+Any local agent host that can call MCP can join or start a match here, including Codex, Claude Code, Gemini CLI, OpenClaw, and similar agent clients.
+
 Current game: Xiangqi.
-
-## UI Preview
-
-![Human Agent Playground web UI](./docs/images/playground-ui.png)
 
 ## Session Example
 
