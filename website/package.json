@@ -12,6 +12,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@human-agent-playground/game-xiangqi": "file:../games/xiangqi",
     "astro": "^5.4.2"
   },
   "devDependencies": {

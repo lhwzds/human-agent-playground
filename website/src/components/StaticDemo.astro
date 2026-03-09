@@ -1,0 +1,243 @@
+---
+import { demoSnapshots } from '../content/demo-session'
+
+const initialSnapshot = demoSnapshots[0]
+---
+
+<section class="static-demo" id="demo">
+  <div class="demo-stage">
+    <div class="demo-stage-copy">
+      <p class="section-kicker">Static Demo</p>
+      <h3>Replay one shared session directly on the landing page.</h3>
+      <p>
+        This is a pure static replay. The board, timeline, and reasoning summaries are
+        driven by prerecorded data so the website stays lightweight on GitHub Pages.
+      </p>
+    </div>
+
+    <div class="demo-controls">
+      <button type="button" data-demo-action="prev">Previous</button>
+      <button type="button" data-demo-action="next">Next</button>
+      <button type="button" data-demo-action="autoplay">Autoplay</button>
+    </div>
+  </div>
+
+  <div class="demo-meta" data-demo-meta>
+    <span>Move {initialSnapshot.moveCount}</span>
+    <span>Turn: {initialSnapshot.turn}</span>
+    <span>Status: {initialSnapshot.status}</span>
+    <span>Winner: {initialSnapshot.winner ?? 'none'}</span>
+  </div>
+
+  <div class="demo-workspace">
+    <div class="demo-board-shell">
+      <p class="demo-headline" data-demo-headline>{initialSnapshot.headline}</p>
+      <div class="demo-board-layout">
+        <div class="demo-rank-labels" aria-hidden="true">
+          {['10', '9', '8', '7', '6', '5', '4', '3', '2', '1'].map((rank) => (
+            <span>{rank}</span>
+          ))}
+        </div>
+
+        <div class="demo-board-frame">
+          <div class="demo-river" aria-hidden="true">
+            <span>楚河</span>
+            <span>汉界</span>
+          </div>
+          <div class="demo-board-grid" data-demo-board>
+            {initialSnapshot.board.map((row, rowIndex) =>
+              row.map((piece, colIndex) => {
+                const square = `${String.fromCharCode(97 + colIndex)}${10 - rowIndex}`
+                const isLastMoveFrom = initialSnapshot.lastMove?.from === square
+                const isLastMoveTo = initialSnapshot.lastMove?.to === square
+                return (
+                  <div
+                    class={`demo-board-cell${isLastMoveFrom ? ' demo-board-cell-from' : ''}${
+                      isLastMoveTo ? ' demo-board-cell-to' : ''
+                    }`}
+                    data-square={square}
+                  >
+                    {rowIndex > 0 && rowIndex !== 5 ? (
+                      <span class="demo-segment demo-segment-up" aria-hidden="true"></span>
+                    ) : null}
+                    {rowIndex < initialSnapshot.board.length - 1 && rowIndex !== 4 ? (
+                      <span class="demo-segment demo-segment-down" aria-hidden="true"></span>
+                    ) : null}
+                    {colIndex > 0 ? (
+                      <span class="demo-segment demo-segment-left" aria-hidden="true"></span>
+                    ) : null}
+                    {colIndex < row.length - 1 ? (
+                      <span class="demo-segment demo-segment-right" aria-hidden="true"></span>
+                    ) : null}
+                    <span class={`demo-piece demo-piece-${piece?.side ?? 'empty'}`}>
+                      {piece?.display ?? ''}
+                    </span>
+                  </div>
+                )
+              }),
+            )}
+          </div>
+          <div class="demo-file-labels" aria-hidden="true">
+            {['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'].map((file) => (
+              <span>{file}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="demo-feed">
+      <p class="section-kicker">Message Feed</p>
+      <ol data-demo-feed>
+        {initialSnapshot.feed.map((entry) => (
+          <li class={`demo-feed-card demo-feed-card-${entry.actor}`}>
+            <p class="demo-feed-meta">
+              {entry.actor === 'agent' ? 'Agent' : 'Human'} via {entry.channel}
+            </p>
+            <strong>{entry.moveLabel}</strong>
+            <p>{entry.summary}</p>
+            <p class="demo-feed-detail">{entry.detail}</p>
+            {entry.reasoning ? (
+              <div class="demo-reasoning">
+                <span>Reasoning Summary</span>
+                <p>{entry.reasoning}</p>
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </aside>
+  </div>
+</section>
+
+<script
+  id="demo-snapshots"
+  type="application/json"
+  is:inline
+  set:html={JSON.stringify(demoSnapshots)}
+></script>
+
+<script is:inline>
+  const snapshotsNode = document.getElementById('demo-snapshots')
+  const snapshots = snapshotsNode ? JSON.parse(snapshotsNode.textContent ?? '[]') : []
+  const metaNode = document.querySelector('[data-demo-meta]')
+  const headlineNode = document.querySelector('[data-demo-headline]')
+  const boardNode = document.querySelector('[data-demo-board]')
+  const feedNode = document.querySelector('[data-demo-feed]')
+  const autoplayButton = document.querySelector('[data-demo-action="autoplay"]')
+
+  let snapshotIndex = 0
+  let timer = null
+
+  function buildSquareMarkup(square, piece, isFrom, isTo, rowIndex, rowLength, rowCount) {
+    const classNames = ['demo-board-cell']
+    if (isFrom) classNames.push('demo-board-cell-from')
+    if (isTo) classNames.push('demo-board-cell-to')
+
+    const segments = []
+    if (rowIndex > 0 && rowIndex !== 5) segments.push('<span class="demo-segment demo-segment-up" aria-hidden="true"></span>')
+    if (rowIndex < rowCount - 1 && rowIndex !== 4) segments.push('<span class="demo-segment demo-segment-down" aria-hidden="true"></span>')
+    const fileIndex = square.charCodeAt(0) - 97
+    if (fileIndex > 0) segments.push('<span class="demo-segment demo-segment-left" aria-hidden="true"></span>')
+    if (fileIndex < rowLength - 1) segments.push('<span class="demo-segment demo-segment-right" aria-hidden="true"></span>')
+
+    return `<div class="${classNames.join(' ')}" data-square="${square}">${segments.join('')}<span class="demo-piece demo-piece-${
+      piece?.side ?? 'empty'
+    }">${piece?.display ?? ''}</span></div>`
+  }
+
+  function renderSnapshot(index) {
+    snapshotIndex = index
+    const snapshot = snapshots[snapshotIndex]
+
+    if (!snapshot || !metaNode || !headlineNode || !boardNode || !feedNode) {
+      return
+    }
+
+    metaNode.innerHTML = `
+      <span>Move ${snapshot.moveCount}</span>
+      <span>Turn: ${snapshot.turn}</span>
+      <span>Status: ${snapshot.status}</span>
+      <span>Winner: ${snapshot.winner ?? 'none'}</span>
+    `
+
+    headlineNode.textContent = snapshot.headline
+
+    boardNode.innerHTML = snapshot.board
+      .map((row, rowIndex) =>
+        row
+          .map((piece, colIndex) => {
+            const square = `${String.fromCharCode(97 + colIndex)}${10 - rowIndex}`
+            return buildSquareMarkup(
+              square,
+              piece,
+              snapshot.lastMove?.from === square,
+              snapshot.lastMove?.to === square,
+              rowIndex,
+              row.length,
+              snapshot.board.length,
+            )
+          })
+          .join(''),
+      )
+      .join('')
+
+    feedNode.innerHTML = snapshot.feed
+      .map(
+        (entry) => `
+          <li class="demo-feed-card demo-feed-card-${entry.actor}">
+            <p class="demo-feed-meta">${entry.actor === 'agent' ? 'Agent' : 'Human'} via ${entry.channel}</p>
+            <strong>${entry.moveLabel}</strong>
+            <p>${entry.summary}</p>
+            <p class="demo-feed-detail">${entry.detail}</p>
+            ${
+              entry.reasoning
+                ? `<div class="demo-reasoning"><span>Reasoning Summary</span><p>${entry.reasoning}</p></div>`
+                : ''
+            }
+          </li>
+        `,
+      )
+      .join('')
+  }
+
+  function stopAutoplay() {
+    if (timer) {
+      window.clearInterval(timer)
+      timer = null
+    }
+    if (autoplayButton) {
+      autoplayButton.textContent = 'Autoplay'
+    }
+  }
+
+  function startAutoplay() {
+    if (timer) {
+      stopAutoplay()
+      return
+    }
+
+    if (autoplayButton) {
+      autoplayButton.textContent = 'Pause'
+    }
+
+    timer = window.setInterval(() => {
+      const nextIndex = snapshotIndex >= snapshots.length - 1 ? 0 : snapshotIndex + 1
+      renderSnapshot(nextIndex)
+    }, 1800)
+  }
+
+  document.querySelector('[data-demo-action="prev"]')?.addEventListener('click', () => {
+    stopAutoplay()
+    renderSnapshot(snapshotIndex <= 0 ? snapshots.length - 1 : snapshotIndex - 1)
+  })
+
+  document.querySelector('[data-demo-action="next"]')?.addEventListener('click', () => {
+    stopAutoplay()
+    renderSnapshot(snapshotIndex >= snapshots.length - 1 ? 0 : snapshotIndex + 1)
+  })
+
+  autoplayButton?.addEventListener('click', startAutoplay)
+
+  renderSnapshot(0)
+</script>

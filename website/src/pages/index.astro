@@ -1,6 +1,6 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro'
-import DemoFrame from '../components/DemoFrame.astro'
+import StaticDemo from '../components/StaticDemo.astro'
 import {
   entryPoints,
   featureCards,
@@ -56,14 +56,15 @@ import {
 
     <section class="content-section">
       <div class="section-heading">
-        <p class="section-kicker">Live Demo</p>
-        <h2>Embed the real board, not a static mockup.</h2>
+        <p class="section-kicker">Static Demo</p>
+        <h2>Show the real interaction model without deploying a live backend.</h2>
         <p>
-          The landing page can embed the running application through an iframe.
-          When the live URL is not configured yet, it falls back to a real session capture.
+          The landing page now ships with a lightweight, prerecorded Xiangqi session.
+          Visitors can step through the board state, the message feed, and the reasoning
+          summaries with no external service dependency.
         </p>
       </div>
-      <DemoFrame demoUrl={siteMetadata.demoUrl} />
+      <StaticDemo />
     </section>
 
     <section class="content-section">

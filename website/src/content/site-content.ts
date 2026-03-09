@@ -4,7 +4,6 @@ export const siteMetadata = {
   description:
     'Human Agent Playground is a local game-playground repo where humans and MCP-capable agent apps operate on the same live Xiangqi session.',
   domain: 'humanagentplayground.com',
-  demoUrl: import.meta.env.PUBLIC_DEMO_URL ?? '',
   repositoryUrl: 'https://github.com/lhwzds/human-agent-playground',
 } as const
 
