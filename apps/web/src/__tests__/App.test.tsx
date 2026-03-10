@@ -213,4 +213,54 @@ describe('App', () => {
       expect(screen.getByText('No renderer is registered for go.')).toBeInTheDocument()
     })
   })
+
+  it('renders a Gomoku session through the registered game module', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'gomoku',
+        title: 'Gomoku',
+        shortName: 'Gomoku',
+        description: 'A 15x15 connection game where players race to make five in a row.',
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-gmk-1',
+        gameId: 'gomoku',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        events: [
+          {
+            id: 'event-created',
+            kind: 'session_created',
+            createdAt: '2026-03-07T00:00:00.000Z',
+            actorKind: 'human',
+            channel: 'ui',
+            summary: 'Created a new Gomoku session.',
+            details: {
+              gameId: 'gomoku',
+            },
+          },
+        ],
+        state: {
+          kind: 'gomoku',
+          turn: 'black',
+          status: 'active',
+          winner: null,
+          lastMove: null,
+          moveCount: 0,
+          winningLine: null,
+          board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+        },
+      },
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Game: Gomoku')).toBeInTheDocument()
+      expect(screen.getByText('Turn: black')).toBeInTheDocument()
+      expect(screen.getByText(/Stones played: 0/)).toBeInTheDocument()
+    })
+  })
 })

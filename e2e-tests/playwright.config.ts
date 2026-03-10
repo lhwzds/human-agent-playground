@@ -1,28 +1,33 @@
 import { defineConfig } from '@playwright/test'
 
+const apiPort = process.env.PLAYGROUND_API_PORT ?? '8791'
+const webPort = process.env.PLAYGROUND_WEB_PORT ?? '4179'
+const apiBaseUrl = process.env.PLAYGROUND_API_URL ?? `http://127.0.0.1:${apiPort}`
+const webBaseUrl = process.env.PLAYGROUND_WEB_URL ?? `http://127.0.0.1:${webPort}`
+
 export default defineConfig({
   testDir: './tests',
   timeout: 30_000,
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: webBaseUrl,
     trace: 'on-first-retry',
   },
   webServer: [
     {
-      command: 'npm --prefix ../apps/server run start',
-      url: 'http://127.0.0.1:8787/health',
-      reuseExistingServer: true,
+      command: 'rm -f ../../.human-agent-playground-data/e2e-sessions.json && npm --prefix ../apps/server run start',
+      url: `${apiBaseUrl}/health`,
+      reuseExistingServer: false,
       env: {
-        PORT: '8787',
+        PORT: apiPort,
         HUMAN_AGENT_PLAYGROUND_DATA_PATH: '../../.human-agent-playground-data/e2e-sessions.json',
       },
     },
     {
-      command: 'npm --prefix ../apps/web run start',
-      url: 'http://127.0.0.1:4173',
-      reuseExistingServer: true,
+      command: `npm --prefix ../apps/web run start -- --port ${webPort}`,
+      url: webBaseUrl,
+      reuseExistingServer: false,
       env: {
-        VITE_API_URL: 'http://127.0.0.1:8787',
+        VITE_API_URL: apiBaseUrl,
       },
     },
   ],

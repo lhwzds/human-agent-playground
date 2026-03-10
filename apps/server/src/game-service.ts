@@ -391,9 +391,14 @@ function createMovePlayedEvent({
   reasoning?: DecisionExplanation
   details: Record<string, unknown>
 }): SessionEvent {
-  const from = typeof details.from === 'string' ? details.from : 'unknown'
-  const to = typeof details.to === 'string' ? details.to : 'unknown'
   const side = typeof details.side === 'string' ? details.side : 'Unknown'
+  const point = typeof details.point === 'string' ? details.point : null
+  const from = typeof details.from === 'string' ? details.from : null
+  const to = typeof details.to === 'string' ? details.to : null
+  const summary =
+    point !== null
+      ? `${side} played ${point}.`
+      : `${side} played ${from ?? 'unknown'} -> ${to ?? 'unknown'}.`
 
   return {
     id: randomUUID(),
@@ -402,7 +407,7 @@ function createMovePlayedEvent({
     actorKind: actor.actorKind,
     channel: actor.channel,
     actorName: actor.actorName,
-    summary: `${side} played ${from} -> ${to}.`,
+    summary,
     reasoning,
     details,
   }
@@ -591,12 +596,15 @@ function parseMoveEventDetails(state: unknown): Record<string, unknown> {
 
   const move = (state as { lastMove: { [key: string]: unknown } }).lastMove
   return {
+    point: move.point,
     from: move.from,
     to: move.to,
     side: move.side,
     notation: move.notation,
     pieceDisplay:
       typeof move.piece === 'object' && move.piece !== null ? (move.piece as { display?: unknown }).display : undefined,
+    stoneDisplay:
+      typeof move.stone === 'object' && move.stone !== null ? (move.stone as { display?: unknown }).display : undefined,
     capturedDisplay:
       typeof move.captured === 'object' && move.captured !== null
         ? (move.captured as { display?: unknown }).display

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const apiBaseUrl = process.env.PLAYGROUND_API_URL ?? 'http://127.0.0.1:8787'
+const apiBaseUrl = process.env.PLAYGROUND_API_URL ?? 'http://127.0.0.1:8791'
 
 test('creates a Xiangqi session and plays a legal opening move', async ({ page }) => {
   const messageFeedCard = page.locator('.panel-card', {
@@ -10,14 +10,15 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   await page.goto('/')
 
   await expect(page.getByText('Shared Tabletop Sessions For Humans And Agents')).toBeVisible()
+  await page.locator('select').first().selectOption('xiangqi')
+  await expect(page.locator('.mono').first()).toBeVisible()
+  const previousSessionId = (await page.locator('.mono').first().textContent())?.trim()
+  await page.getByRole('button', { name: 'Create Session' }).click()
   await expect(page.getByText('楚河')).toBeVisible()
   await expect(page.getByText('汉界')).toBeVisible()
   await expect(page.locator('[data-square="a6"] .board-point-segment-down')).toHaveCount(0)
   await expect(page.locator('[data-square="a5"] .board-point-segment-up')).toHaveCount(0)
   await expect(page.locator('[data-square="e9"] .board-point-diagonal')).toHaveCount(4)
-  await expect(page.locator('.mono').first()).toBeVisible()
-  const previousSessionId = (await page.locator('.mono').first().textContent())?.trim()
-  await page.getByRole('button', { name: 'Create Session' }).click()
   await expect(page.getByText('Sync: live')).toBeVisible()
   await expect(page.getByText('Turn: red')).toBeVisible()
   await expect(page.locator('.mono').first()).not.toHaveText(previousSessionId ?? '')
@@ -50,6 +51,7 @@ test('reflects external session moves in real time', async ({ page, request }) =
   })
 
   await page.goto('/')
+  await page.locator('select').first().selectOption('xiangqi')
   await expect(page.locator('.mono').first()).toBeVisible()
   const streamUrls: string[] = []
 
@@ -154,4 +156,49 @@ test('reflects external session moves in real time', async ({ page, request }) =
   await expect(page.locator('[data-square="a5"]')).toHaveClass(/board-cell-last-from/)
   await expect(page.locator('[data-square="a6"]')).toHaveClass(/board-cell-last-to/)
   await expect(messageFeedCard.getByText('a4 → a5')).toBeVisible()
+})
+
+test('creates a Gomoku session and reflects placed stones in real time', async ({ page, request }) => {
+  const messageFeedCard = page.locator('.panel-card', {
+    has: page.getByRole('heading', { name: 'Message Feed' }),
+  })
+
+  await page.goto('/')
+  await page.locator('select').first().selectOption('gomoku')
+  await page.getByRole('button', { name: 'Create Session' }).click()
+
+  await expect(page.getByText('Game: Gomoku')).toBeVisible()
+  await expect(page.getByText('Turn: black')).toBeVisible()
+  await expect(page.locator('[data-point="h8"]')).toBeVisible()
+  await expect(page.locator('[data-point="d12"] .gomoku-star-point')).toBeVisible()
+
+  await page.locator('[data-point="h8"]').click()
+
+  await expect(messageFeedCard.locator('strong', { hasText: 'h8' })).toBeVisible()
+  await expect(messageFeedCard.getByText('Placed ●')).toBeVisible()
+  await expect(page.getByText('Turn: white')).toBeVisible()
+  await expect(page.locator('[data-point="h8"]')).toHaveClass(/gomoku-point-last/)
+
+  const sessionId = (await page.locator('.mono').first().textContent())?.trim()
+  expect(sessionId).toBeTruthy()
+
+  const response = await request.post(`${apiBaseUrl}/api/sessions/${sessionId}/moves`, {
+    data: {
+      point: 'i8',
+      actorKind: 'agent',
+      channel: 'mcp',
+      reasoning: {
+        summary: 'Mirror the center extension to fight for the same row immediately.',
+        reasoningSteps: ['A nearby response contests the strongest existing line.'],
+        confidence: 0.69,
+      },
+    },
+  })
+
+  expect(response.ok()).toBe(true)
+  await expect(messageFeedCard.locator('strong', { hasText: 'i8' })).toBeVisible()
+  await expect(messageFeedCard.getByText('Reasoning Summary')).toBeVisible()
+  await expect(messageFeedCard.getByText('Mirror the center extension to fight for the same row immediately.')).toBeVisible()
+  await expect(page.getByText('Turn: black')).toBeVisible()
+  await expect(page.locator('[data-point="i8"]')).toHaveClass(/gomoku-point-last/)
 })

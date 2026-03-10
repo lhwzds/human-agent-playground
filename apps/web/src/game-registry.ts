@@ -1,7 +1,8 @@
+import { gomokuGameModule } from './games/gomoku'
 import { xiangqiGameModule } from './games/xiangqi'
 import type { GameModule } from './games/types'
 
-const gameModules: GameModule[] = [xiangqiGameModule]
+const gameModules: GameModule[] = [xiangqiGameModule, gomokuGameModule]
 
 const gameModuleById = new Map(gameModules.map((module) => [module.gameId, module]))
 

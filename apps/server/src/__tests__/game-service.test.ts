@@ -43,9 +43,41 @@ describe('GameService', () => {
 
     const games = await service.listGames()
     expect(games.map((game) => game.id)).toContain('xiangqi')
+    expect(games.map((game) => game.id)).toContain('gomoku')
 
     const error = await service.createSession({ gameId: 'go' }).catch((value) => value)
     expect(error).toBeInstanceOf(Error)
+  })
+
+  it('supports Gomoku session creation, stone placement, and win detection', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    const service = new GameService(join(directory, 'sessions.json'))
+
+    let session = await service.createSession({ gameId: 'gomoku' })
+    expect(session.state.turn).toBe('black')
+
+    for (const point of ['h8', 'a1', 'i8', 'b1', 'j8', 'c1', 'k8', 'd1', 'l8'] as const) {
+      session = await service.playMove(session.id, { point })
+    }
+
+    expect(session.state.status).toBe('finished')
+    expect(session.state.winner).toBe('black')
+    expect(session.state.lastMove).toEqual(
+      expect.objectContaining({
+        point: 'l8',
+        side: 'black',
+      }),
+    )
+    expect(session.state.winningLine).toEqual(['h8', 'i8', 'j8', 'k8', 'l8'])
+    expect(session.events.at(-1)).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+        details: expect.objectContaining({
+          point: 'l8',
+          stoneDisplay: '●',
+        }),
+      }),
+    )
   })
 
   it('notifies session subscribers when a move lands', async () => {

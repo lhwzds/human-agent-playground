@@ -1,0 +1,21 @@
+{
+  "name": "@human-agent-playground/game-gomoku",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@human-agent-playground/core": "file:../../packages/core"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "zod": "^4.1.12"
+  }
+}

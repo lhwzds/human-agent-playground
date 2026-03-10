@@ -87,6 +87,9 @@ describe('Streamable HTTP MCP server', () => {
         'get_game_state',
         'wait_for_turn',
         'reset_session',
+        'gomoku_get_legal_moves',
+        'gomoku_play_move',
+        'gomoku_play_move_and_wait',
         'xiangqi_get_legal_moves',
         'xiangqi_play_move',
         'xiangqi_play_move_and_wait',
@@ -98,6 +101,14 @@ describe('Streamable HTTP MCP server', () => {
       expect.objectContaining({
         category: 'catalog',
         tags: expect.arrayContaining(['tools', 'search']),
+      }),
+    )
+    expect(
+      tools.tools.find((tool) => tool.name === 'gomoku_play_move')?._meta?.['human-agent-playground/tool'],
+    ).toEqual(
+      expect.objectContaining({
+        category: 'gameplay',
+        gameId: 'gomoku',
       }),
     )
     expect(
@@ -142,6 +153,24 @@ describe('Streamable HTTP MCP server', () => {
       'xiangqi_get_legal_moves',
       'xiangqi_play_move',
       'xiangqi_play_move_and_wait',
+    ])
+
+    const gomokuSearchResult = extractPayload(
+      await client.callTool({
+        name: 'search_tools',
+        arguments: {
+          category: 'gameplay',
+          gameId: 'gomoku',
+        },
+      }),
+    ) as {
+      tools: Array<{ name: string }>
+    }
+
+    expect(gomokuSearchResult.tools.map((tool) => tool.name)).toEqual([
+      'gomoku_get_legal_moves',
+      'gomoku_play_move',
+      'gomoku_play_move_and_wait',
     ])
 
     const created = extractPayload(
@@ -326,6 +355,72 @@ describe('Streamable HTTP MCP server', () => {
     expect(playAndWaitResult.event).toEqual(
       expect.objectContaining({
         kind: 'move_played',
+      }),
+    )
+
+    const gomokuCreated = extractPayload(
+      await client.callTool({
+        name: 'create_session',
+        arguments: {
+          gameId: 'gomoku',
+        },
+      }),
+    ) as {
+      id: string
+      state: { turn: string }
+    }
+
+    expect(gomokuCreated.state.turn).toBe('black')
+
+    const gomokuLegalMoves = extractPayload(
+      await client.callTool({
+        name: 'gomoku_get_legal_moves',
+        arguments: {
+          sessionId: gomokuCreated.id,
+          point: 'h8',
+        },
+      }),
+    ) as {
+      moves: Array<{ point: string }>
+    }
+
+    expect(gomokuLegalMoves.moves).toEqual([{ point: 'h8' }])
+
+    const gomokuUpdated = extractPayload(
+      await client.callTool({
+        name: 'gomoku_play_move',
+        arguments: {
+          sessionId: gomokuCreated.id,
+          point: 'h8',
+          reasoning: {
+            summary: 'Claim the center point to maximize future line options.',
+            reasoningSteps: ['The center provides the widest expansion in every direction.'],
+            confidence: 0.72,
+          },
+        },
+      }),
+    ) as {
+      state: {
+        turn: string
+        lastMove: { point: string; side: string }
+      }
+      events: Array<{
+        reasoning?: {
+          summary: string
+        }
+      }>
+    }
+
+    expect(gomokuUpdated.state.turn).toBe('white')
+    expect(gomokuUpdated.state.lastMove).toEqual(
+      expect.objectContaining({
+        point: 'h8',
+        side: 'black',
+      }),
+    )
+    expect(gomokuUpdated.events.at(-1)?.reasoning).toEqual(
+      expect.objectContaining({
+        summary: 'Claim the center point to maximize future line options.',
       }),
     )
 

@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
 import type { GameService } from '../game-service.js'
+import { createGomokuToolCatalog } from './register-gomoku-tools.js'
 import { createPlatformToolCatalog } from './register-platform-tools.js'
 import { createXiangqiToolCatalog } from './register-xiangqi-tools.js'
 import { registerToolCatalog, type ToolCatalogEntry } from './tool-catalog.js'
@@ -15,6 +16,7 @@ export function createMcpServer(service: GameService) {
   const getAllTools = () => toolCatalog
 
   toolCatalog.push(...createPlatformToolCatalog(service, getAllTools))
+  toolCatalog.push(...createGomokuToolCatalog(service))
   toolCatalog.push(...createXiangqiToolCatalog(service))
 
   registerToolCatalog(server, toolCatalog)

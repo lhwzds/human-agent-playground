@@ -1,5 +1,6 @@
 import type { GameCatalogItem } from '@human-agent-playground/core'
 
+import { gomokuGameAdapter } from './games/gomoku-adapter.js'
 import { xiangqiGameAdapter } from './games/xiangqi-adapter.js'
 
 export interface GameAdapter {
@@ -10,7 +11,7 @@ export interface GameAdapter {
   playMove(state: unknown, input: unknown): unknown
 }
 
-const adapters: GameAdapter[] = [xiangqiGameAdapter]
+const adapters: GameAdapter[] = [xiangqiGameAdapter, gomokuGameAdapter]
 
 const adapterById = new Map(adapters.map((adapter) => [adapter.game.id, adapter]))
 
