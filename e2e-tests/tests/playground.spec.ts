@@ -192,6 +192,44 @@ test('reflects external session moves in real time', async ({ page, request }) =
   await expect(messageFeedCard.getByText('a4 → a5')).toBeVisible()
 })
 
+test('keeps the hero controls aligned and leaves room in a single-message feed', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.locator('select').first().selectOption('gomoku')
+  await page.getByRole('button', { name: 'Create Session' }).click()
+
+  await expect(page.getByText('Game: Gomoku')).toBeVisible()
+
+  const layoutMetrics = await page.evaluate(() => {
+    const heroPanel = document.querySelector('.hero-panel')?.getBoundingClientRect()
+    const heroToolbar = document.querySelector('.hero-toolbar')?.getBoundingClientRect()
+    const select = document.querySelector('.toolbar-row-primary select')?.getBoundingClientRect()
+    const createButton = document
+      .querySelector('.toolbar-row-primary .primary-button')
+      ?.getBoundingClientRect()
+    const feedList = document.querySelector('.message-feed-list')?.getBoundingClientRect()
+    const firstItem = document.querySelector('.message-feed-item')?.getBoundingClientRect()
+
+    return {
+      heroHeight: heroPanel?.height ?? 0,
+      toolbarHeight: heroToolbar?.height ?? 0,
+      toolbarTop: heroToolbar?.top ?? 0,
+      selectTop: select?.top ?? 0,
+      buttonTop: createButton?.top ?? 0,
+      feedHeight: feedList?.height ?? 0,
+      firstItemHeight: firstItem?.height ?? 0,
+      messageCount: document.querySelectorAll('.message-feed-item').length,
+    }
+  })
+
+  expect(Math.abs(layoutMetrics.heroHeight - layoutMetrics.toolbarHeight)).toBeLessThan(3)
+  expect(Math.abs(layoutMetrics.selectTop - layoutMetrics.buttonTop)).toBeLessThan(2)
+  expect(layoutMetrics.buttonTop - layoutMetrics.toolbarTop).toBeGreaterThan(8)
+  expect(layoutMetrics.messageCount).toBe(1)
+  expect(layoutMetrics.firstItemHeight).toBeLessThan(layoutMetrics.feedHeight * 0.7)
+})
+
 test('creates a Gomoku session and reflects placed stones in real time', async ({ page, request }) => {
   const messageFeedCard = page.locator('.panel-card', {
     has: page.getByRole('heading', { name: 'Message Feed' }),

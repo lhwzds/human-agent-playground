@@ -344,11 +344,14 @@ describe('App', () => {
 
     const heroPanel = document.querySelector('.hero-panel')
     const heroToolbar = document.querySelector('.hero-toolbar')
+    const primaryRow = document.querySelector('.toolbar-row-primary')
     const toolbarActions = document.querySelector('.toolbar-row-actions')
 
     expect(heroPanel).not.toBeNull()
     expect(heroToolbar).not.toBeNull()
     expect(heroPanel?.contains(heroToolbar ?? null)).toBe(true)
+    expect(primaryRow?.querySelector('select')).not.toBeNull()
+    expect(primaryRow?.querySelector('.primary-button')).not.toBeNull()
     expect(toolbarActions?.querySelectorAll('button')).toHaveLength(2)
 
     await act(async () => {
