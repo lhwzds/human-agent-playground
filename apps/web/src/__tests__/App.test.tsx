@@ -1,7 +1,8 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App, { resetBootstrapCacheForTests } from '../App'
+import { resetLanguagePreferenceForTests } from '../i18n'
 
 const closeStream = vi.fn()
 let emitSessionUpdate: ((session: unknown) => void) | null = null
@@ -28,6 +29,7 @@ describe('App', () => {
     emitSessionUpdate = null
     closeStream.mockClear()
     vi.clearAllMocks()
+    resetLanguagePreferenceForTests()
     resetBootstrapCacheForTests()
   })
 
@@ -345,13 +347,16 @@ describe('App', () => {
     const heroPanel = document.querySelector('.hero-panel')
     const heroToolbar = document.querySelector('.hero-toolbar')
     const primaryRow = document.querySelector('.toolbar-row-primary')
+    const sessionRow = document.querySelector('.toolbar-row-session')
     const toolbarActions = document.querySelector('.toolbar-row-actions')
 
     expect(heroPanel).not.toBeNull()
     expect(heroToolbar).not.toBeNull()
     expect(heroPanel?.contains(heroToolbar ?? null)).toBe(true)
     expect(primaryRow?.querySelector('select')).not.toBeNull()
-    expect(primaryRow?.querySelector('.primary-button')).not.toBeNull()
+    expect(primaryRow?.querySelector('.primary-button')).toBeNull()
+    expect(sessionRow?.querySelector('.toolbar-session')).not.toBeNull()
+    expect(sessionRow?.querySelector('.primary-button')).not.toBeNull()
     expect(toolbarActions?.querySelectorAll('button')).toHaveLength(2)
 
     await act(async () => {
@@ -367,6 +372,67 @@ describe('App', () => {
     await waitFor(() => {
       expect(resetSession).toHaveBeenCalledWith('session-gmk-2')
       expect(screen.getByText('Turn: black')).toBeInTheDocument()
+    })
+  })
+
+  it('switches the interface to Chinese from the header language selector', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'gomoku',
+        title: 'Gomoku',
+        shortName: 'Gomoku',
+        description: 'A 15x15 connection game where players race to make five in a row.',
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-gmk-zh',
+        gameId: 'gomoku',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        events: [
+          {
+            id: 'event-created',
+            kind: 'session_created',
+            createdAt: '2026-03-07T00:00:00.000Z',
+            actorKind: 'human',
+            channel: 'ui',
+            summary: 'Created a new Gomoku session.',
+            details: {
+              gameId: 'gomoku',
+            },
+          },
+        ],
+        state: {
+          kind: 'gomoku',
+          turn: 'black',
+          status: 'active',
+          winner: null,
+          lastMove: null,
+          moveCount: 0,
+          winningLine: null,
+          board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+        },
+      },
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Language' })).toBeInTheDocument()
+      expect(screen.getByText('Game: Gomoku')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Language' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '中文' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('供人类与智能体共享的棋盘对局')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '创建对局' })).toBeInTheDocument()
+      expect(screen.getByText('游戏: 五子棋')).toBeInTheDocument()
+      expect(screen.getByText('当前行棋: 黑方')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: '消息流' })).toBeInTheDocument()
+      expect(screen.getByText('已创建对局')).toBeInTheDocument()
     })
   })
 })

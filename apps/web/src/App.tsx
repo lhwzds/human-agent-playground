@@ -1,5 +1,5 @@
 import type { GameCatalogItem, GameSession } from '@human-agent-playground/core'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   createSession,
@@ -11,6 +11,14 @@ import {
 } from './api'
 import './App.css'
 import { getGameModule } from './game-registry'
+import {
+  getGameLabel,
+  getStatusLabel,
+  getSyncStateLabel,
+  getWinnerLabel,
+  I18nProvider,
+  useI18n,
+} from './i18n'
 
 interface BootstrapPayload {
   games: GameCatalogItem[]
@@ -78,29 +86,42 @@ function SessionSetupCard({
   onRefreshSession,
   onResetSession,
 }: SessionSetupCardProps) {
+  const { language, t } = useI18n()
+
   return (
-    <div className="hero-toolbar" role="toolbar" aria-label="Session controls">
+    <div className="hero-toolbar" role="toolbar" aria-label={t('toolbar.aria')}>
       <div className="toolbar-row toolbar-row-primary">
         <label className="toolbar-field">
-          <span>Game</span>
-          <select value={selectedGameId} onChange={(event) => onGameChange(event.target.value)}>
+          <span>{t('toolbar.game')}</span>
+          <select
+            aria-label={t('toolbar.game')}
+            value={selectedGameId}
+            onChange={(event) => onGameChange(event.target.value)}
+          >
             {games.map((game) => (
               <option key={game.id} value={game.id}>
-                {game.shortName}
+                {getGameLabel(language, game.id, game.shortName)}
               </option>
             ))}
           </select>
         </label>
+      </div>
+      <div className="toolbar-row toolbar-row-session">
+        {sessionId ? (
+          <span className="toolbar-session">
+            <span>{t('toolbar.session')}</span>
+            <span className="mono">{sessionId}</span>
+          </span>
+        ) : (
+          <span className="toolbar-session toolbar-session-placeholder">
+            <span>{t('toolbar.session')}</span>
+            <span>{t('workspace.noSession')}</span>
+          </span>
+        )}
         <button className="primary-button toolbar-button" type="button" onClick={onCreateSession}>
-          Create Session
+          {t('toolbar.createSession')}
         </button>
       </div>
-      {sessionId ? (
-        <span className="toolbar-session">
-          <span>Session</span>
-          <span className="mono">{sessionId}</span>
-        </span>
-      ) : null}
       {sessionId && (onRefreshSession || onResetSession) ? (
         <div className="toolbar-row toolbar-row-actions">
           {onRefreshSession ? (
@@ -109,12 +130,12 @@ function SessionSetupCard({
               type="button"
               onClick={onRefreshSession}
             >
-              Refresh
+              {t('toolbar.refresh')}
             </button>
           ) : null}
           {onResetSession ? (
             <button className="secondary-button toolbar-button" type="button" onClick={onResetSession}>
-              Reset
+              {t('toolbar.reset')}
             </button>
           ) : null}
         </div>
@@ -123,7 +144,70 @@ function SessionSetupCard({
   )
 }
 
-function App() {
+function LanguageMenu() {
+  const { language, setLanguage, t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [])
+
+  return (
+    <div ref={menuRef} className="language-menu">
+      <button
+        className="language-menu-trigger"
+        type="button"
+        aria-label={t('toolbar.language')}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {language === 'zh-CN' ? '中' : 'EN'}
+      </button>
+      {open ? (
+        <div className="language-menu-dropdown" role="menu" aria-label={t('toolbar.language')}>
+          <button
+            className={`language-menu-option ${language === 'en' ? 'is-active' : ''}`}
+            type="button"
+            role="menuitemradio"
+            aria-checked={language === 'en'}
+            onClick={() => {
+              setLanguage('en')
+              setOpen(false)
+            }}
+          >
+            {t('toolbar.language.en')}
+          </button>
+          <button
+            className={`language-menu-option ${language === 'zh-CN' ? 'is-active' : ''}`}
+            type="button"
+            role="menuitemradio"
+            aria-checked={language === 'zh-CN'}
+            onClick={() => {
+              setLanguage('zh-CN')
+              setOpen(false)
+            }}
+          >
+            {t('toolbar.language.zh-CN')}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function AppContent() {
+  const { language, t } = useI18n()
   const [games, setGames] = useState<GameCatalogItem[]>([])
   const [session, setSession] = useState<GameSession | null>(null)
   const [selectedGameId, setSelectedGameId] = useState('xiangqi')
@@ -223,6 +307,11 @@ function App() {
   const activeGame = games.find((game) => game.id === (session?.gameId ?? selectedGameId))
   const activeGameModule = resolveGameModule(activeGame?.id)
   const summary = session && activeGameModule ? activeGameModule.getSummary(session) : null
+  const activeGameLabel = getGameLabel(
+    language,
+    activeGame?.id ?? session?.gameId ?? selectedGameId,
+    activeGame?.shortName ?? session?.gameId ?? selectedGameId,
+  )
   const isCheck =
     session &&
     typeof session.state === 'object' &&
@@ -233,26 +322,37 @@ function App() {
   return (
     <main className="app-shell">
       <section className="hero-panel">
+        <LanguageMenu />
         <div className="hero-main">
           <div className="hero-copy-block">
             <p className="eyebrow">Human Agent Playground</p>
-            <h1>Shared Tabletop Sessions For Humans And Agents</h1>
-            <p className="hero-copy">
-              One UI, one MCP endpoint, one session store. Games live in isolated folders,
-              while the platform lets humans and agents operate on the same match state and
-              watch each move land in real time.
-            </p>
+            <h1>{t('hero.heading')}</h1>
+            <p className="hero-copy">{t('hero.copy')}</p>
             <div className="meta-strip">
-              <span>Game: {activeGame?.shortName ?? session?.gameId ?? selectedGameId}</span>
-              <span>Sync: {syncState}</span>
-              <span>Turn: {summary?.turn ?? '...'}</span>
-              <span>Status: {summary?.status ?? '...'}</span>
-              <span>Winner: {summary?.winner ?? 'none'}</span>
-              {isCheck ? <span>Check: active</span> : null}
+              <span>
+                {t('meta.game')}: {activeGameLabel}
+              </span>
+              <span>
+                {t('meta.sync')}: {getSyncStateLabel(language, syncState)}
+              </span>
+              <span>
+                {t('meta.turn')}: {summary ? getWinnerLabel(language, summary.turn) : '...'}
+              </span>
+              <span>
+                {t('meta.status')}: {summary ? getStatusLabel(language, summary.status) : '...'}
+              </span>
+              <span>
+                {t('meta.winner')}: {summary ? getWinnerLabel(language, summary.winner) : t('winner.none')}
+              </span>
+              {isCheck ? (
+                <span>
+                  {t('meta.check')}: {t('meta.checkActive')}
+                </span>
+              ) : null}
             </div>
             {error ? (
               <div className="hero-alert" role="alert">
-                <strong>Error</strong>
+                <strong>{t('hero.error')}</strong>
                 <p>{error}</p>
               </div>
             ) : null}
@@ -274,19 +374,19 @@ function App() {
       <section className="workspace">
         {loading && (
           <article className="board-panel">
-            <p className="empty-state">Loading board…</p>
+            <p className="empty-state">{t('workspace.loading')}</p>
           </article>
         )}
 
         {!loading && !session && (
           <article className="board-panel workspace-fallback-panel">
-            <p className="empty-state">No session loaded. Create one from the header bar.</p>
+            <p className="empty-state">{t('workspace.noSession')}</p>
           </article>
         )}
 
         {!loading && session && !activeGameModule && (
           <article className="board-panel workspace-fallback-panel">
-            <p className="empty-state">No renderer is registered for {session.gameId}.</p>
+            <p className="empty-state">{t('workspace.noRenderer', { gameId: session.gameId })}</p>
           </article>
         )}
 
@@ -301,6 +401,14 @@ function App() {
         )}
       </section>
     </main>
+  )
+}
+
+function App() {
+  return (
+    <I18nProvider>
+      <AppContent />
+    </I18nProvider>
   )
 }
 

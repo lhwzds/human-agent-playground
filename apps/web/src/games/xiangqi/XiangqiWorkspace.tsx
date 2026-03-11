@@ -11,6 +11,13 @@ import {
 } from '@human-agent-playground/game-xiangqi'
 import { useEffect, useRef, useState } from 'react'
 
+import {
+  formatActorLabel,
+  formatEventHeadline,
+  formatEventSummary,
+  formatTimestamp,
+  useI18n,
+} from '../../i18n'
 import type { GameWorkspaceProps } from '../types'
 import { getXiangqiLegalMoves, playXiangqiMove } from './api'
 import { XiangqiBoard } from './components/XiangqiBoard'
@@ -33,6 +40,7 @@ export function XiangqiWorkspace({
   onSessionUpdate,
   onError,
 }: GameWorkspaceProps) {
+  const { t } = useI18n()
   const session = toXiangqiSession(rawSession)
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
   const [legalMoves, setLegalMoves] = useState<XiangqiMove[]>([])
@@ -133,13 +141,13 @@ export function XiangqiWorkspace({
 
       <aside className="side-panel" style={feedHeight ? { height: `${feedHeight}px` } : undefined}>
         <div className="panel-card panel-card-feed">
-          <h2>Message Feed</h2>
+          <h2>{t('feed.title')}</h2>
           {sessionEvents.length === 0 ? (
-            <p>No session events yet.</p>
+            <p>{t('feed.empty')}</p>
           ) : (
             <ol className="message-feed-list">
               {sessionEvents.map((event) => (
-                <MessageFeedItem key={event.id} event={event} />
+                <MessageFeedItem key={event.id} event={event} gameId={session.gameId} />
               ))}
             </ol>
           )}
@@ -149,17 +157,18 @@ export function XiangqiWorkspace({
   )
 }
 
-function MessageFeedItem({ event }: { event: SessionEvent }) {
-  const moveDetails = event.kind === 'move_played' ? formatMoveDetails(event) : ''
+function MessageFeedItem({ event, gameId }: { event: SessionEvent; gameId: string }) {
+  const { language } = useI18n()
+  const moveDetails = event.kind === 'move_played' ? formatMoveDetails(language, event) : ''
 
   return (
     <li className={`message-feed-item message-feed-item-${event.actorKind}`}>
       <article className="message-feed-bubble">
         <p className="message-feed-meta">
-          {formatActorLabel(event)} · {formatTimestamp(event.createdAt)}
+          {formatActorLabel(language, event)} · {formatTimestamp(language, event.createdAt)}
         </p>
-        <strong>{formatEventHeadline(event)}</strong>
-        <p className="message-feed-summary">{event.summary}</p>
+        <strong>{formatEventHeadline(language, event)}</strong>
+        <p className="message-feed-summary">{formatEventSummary(language, event, gameId)}</p>
         {moveDetails ? <p className="message-feed-summary">{moveDetails}</p> : null}
         {event.reasoning ? <ReasoningSummary explanation={event.reasoning} compact /> : null}
       </article>
@@ -174,9 +183,11 @@ function ReasoningSummary({
   explanation: DecisionExplanation
   compact?: boolean
 }) {
+  const { t } = useI18n()
+
   return (
     <div className={`reasoning-summary ${compact ? 'reasoning-summary-compact' : ''}`}>
-      <p className="reasoning-summary-title">Reasoning Summary</p>
+      <p className="reasoning-summary-title">{t('feed.reasoningSummary')}</p>
       <p>{explanation.summary}</p>
 
       {explanation.reasoningSteps.length > 0 && (
@@ -199,33 +210,15 @@ function ReasoningSummary({
       )}
 
       {typeof explanation.confidence === 'number' && (
-        <p className="reasoning-confidence">Confidence: {explanation.confidence.toFixed(2)}</p>
+        <p className="reasoning-confidence">
+          {t('feed.confidence', { value: explanation.confidence.toFixed(2) })}
+        </p>
       )}
     </div>
   )
 }
 
-function formatEventHeadline(event: SessionEvent) {
-  if (
-    event.kind === 'move_played' &&
-    typeof event.details.from === 'string' &&
-    typeof event.details.to === 'string'
-  ) {
-    return `${event.details.from} → ${event.details.to}`
-  }
-
-  if (event.kind === 'session_created') {
-    return 'Session Created'
-  }
-
-  if (event.kind === 'session_reset') {
-    return 'Session Reset'
-  }
-
-  return event.summary
-}
-
-function formatMoveDetails(event: SessionEvent) {
+function formatMoveDetails(language: 'en' | 'zh-CN', event: SessionEvent) {
   const pieceDisplay = typeof event.details.pieceDisplay === 'string' ? event.details.pieceDisplay : null
   const capturedDisplay =
     typeof event.details.capturedDisplay === 'string' ? event.details.capturedDisplay : null
@@ -234,31 +227,11 @@ function formatMoveDetails(event: SessionEvent) {
     return ''
   }
 
-  return capturedDisplay ? `${pieceDisplay} captured ${capturedDisplay}` : pieceDisplay
-}
-
-function formatActorLabel(event: SessionEvent) {
-  const actorLabel =
-    event.actorName ??
-    (event.actorKind === 'human'
-      ? 'Human'
-      : event.actorKind === 'agent'
-        ? 'Agent'
-        : event.actorKind === 'system'
-          ? 'System'
-          : 'Unknown')
-
-  return `${actorLabel} via ${event.channel}`
-}
-
-function formatTimestamp(timestamp: string) {
-  const date = new Date(timestamp)
-  if (Number.isNaN(date.valueOf())) {
-    return timestamp
-  }
-
-  return date.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return capturedDisplay
+    ? language === 'zh-CN'
+      ? `${pieceDisplay} 吃 ${capturedDisplay}`
+      : `${pieceDisplay} captured ${capturedDisplay}`
+    : language === 'zh-CN'
+      ? `${pieceDisplay} 落子`
+      : pieceDisplay
 }

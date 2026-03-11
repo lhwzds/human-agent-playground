@@ -30,8 +30,19 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
     const toolbar = document.querySelector('.hero-toolbar')?.getBoundingClientRect()
     const select = document.querySelector('.toolbar-row-primary select')?.getBoundingClientRect()
     const createButton = document
-      .querySelector('.toolbar-row-primary .primary-button')
+      .querySelector('.toolbar-row-session .primary-button')
       ?.getBoundingClientRect()
+    const sessionCard = document.querySelector('.toolbar-row-session .toolbar-session')?.getBoundingClientRect()
+    const languageTrigger = document.querySelector('.language-menu-trigger')?.getBoundingClientRect()
+    const languageOverlapsCreateButton =
+      !!languageTrigger &&
+      !!createButton &&
+      !(
+        languageTrigger.right <= createButton.left ||
+        languageTrigger.left >= createButton.right ||
+        languageTrigger.bottom <= createButton.top ||
+        languageTrigger.top >= createButton.bottom
+      )
 
     return {
       heroHeight: heroPanel?.height ?? 0,
@@ -39,12 +50,17 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
       toolbarTop: toolbar?.top ?? 0,
       selectTop: select?.top ?? 0,
       buttonTop: createButton?.top ?? 0,
+      sessionTop: sessionCard?.top ?? 0,
+      languageBottom: languageTrigger?.bottom ?? 0,
+      overlapsCreateButton: languageOverlapsCreateButton,
     }
   })
 
   expect(Math.abs(heroHeights.heroHeight - heroHeights.toolbarHeight)).toBeLessThan(3)
-  expect(Math.abs(heroHeights.selectTop - heroHeights.buttonTop)).toBeLessThan(2)
-  expect(heroHeights.buttonTop - heroHeights.toolbarTop).toBeGreaterThan(8)
+  expect(heroHeights.buttonTop - heroHeights.selectTop).toBeGreaterThan(8)
+  expect(Math.abs(heroHeights.sessionTop - heroHeights.buttonTop)).toBeLessThan(2)
+  expect(heroHeights.buttonTop - heroHeights.languageBottom).toBeGreaterThan(8)
+  expect(heroHeights.overlapsCreateButton).toBe(false)
 
   const panelHeights = await page.evaluate(() => {
     const boardPanel = document.querySelector('.game-workspace-layout .board-panel')?.getBoundingClientRect()
@@ -206,10 +222,21 @@ test('keeps the hero controls aligned and leaves room in a single-message feed',
     const heroToolbar = document.querySelector('.hero-toolbar')?.getBoundingClientRect()
     const select = document.querySelector('.toolbar-row-primary select')?.getBoundingClientRect()
     const createButton = document
-      .querySelector('.toolbar-row-primary .primary-button')
+      .querySelector('.toolbar-row-session .primary-button')
       ?.getBoundingClientRect()
+    const sessionCard = document.querySelector('.toolbar-row-session .toolbar-session')?.getBoundingClientRect()
+    const languageTrigger = document.querySelector('.language-menu-trigger')?.getBoundingClientRect()
     const feedList = document.querySelector('.message-feed-list')?.getBoundingClientRect()
     const firstItem = document.querySelector('.message-feed-item')?.getBoundingClientRect()
+    const languageOverlapsCreateButton =
+      !!languageTrigger &&
+      !!createButton &&
+      !(
+        languageTrigger.right <= createButton.left ||
+        languageTrigger.left >= createButton.right ||
+        languageTrigger.bottom <= createButton.top ||
+        languageTrigger.top >= createButton.bottom
+      )
 
     return {
       heroHeight: heroPanel?.height ?? 0,
@@ -217,6 +244,9 @@ test('keeps the hero controls aligned and leaves room in a single-message feed',
       toolbarTop: heroToolbar?.top ?? 0,
       selectTop: select?.top ?? 0,
       buttonTop: createButton?.top ?? 0,
+      sessionTop: sessionCard?.top ?? 0,
+      languageBottom: languageTrigger?.bottom ?? 0,
+      overlapsCreateButton: languageOverlapsCreateButton,
       feedHeight: feedList?.height ?? 0,
       firstItemHeight: firstItem?.height ?? 0,
       messageCount: document.querySelectorAll('.message-feed-item').length,
@@ -224,10 +254,27 @@ test('keeps the hero controls aligned and leaves room in a single-message feed',
   })
 
   expect(Math.abs(layoutMetrics.heroHeight - layoutMetrics.toolbarHeight)).toBeLessThan(3)
-  expect(Math.abs(layoutMetrics.selectTop - layoutMetrics.buttonTop)).toBeLessThan(2)
-  expect(layoutMetrics.buttonTop - layoutMetrics.toolbarTop).toBeGreaterThan(8)
+  expect(layoutMetrics.buttonTop - layoutMetrics.selectTop).toBeGreaterThan(8)
+  expect(Math.abs(layoutMetrics.sessionTop - layoutMetrics.buttonTop)).toBeLessThan(2)
+  expect(layoutMetrics.buttonTop - layoutMetrics.languageBottom).toBeGreaterThan(8)
+  expect(layoutMetrics.overlapsCreateButton).toBe(false)
   expect(layoutMetrics.messageCount).toBe(1)
   expect(layoutMetrics.firstItemHeight).toBeLessThan(layoutMetrics.feedHeight * 0.7)
+})
+
+test('switches the shared interface to Chinese', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Language' }).click()
+  await page.getByRole('menuitemradio', { name: '中文' }).click()
+  await page.locator('select').first().selectOption('gomoku')
+  await page.getByRole('button', { name: '创建对局' }).click()
+
+  await expect(page.getByText('供人类与智能体共享的棋盘对局')).toBeVisible()
+  await expect(page.getByText('游戏: 五子棋')).toBeVisible()
+  await expect(page.getByText('同步: 实时同步')).toBeVisible()
+  await expect(page.getByText('当前行棋: 黑方')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '消息流' })).toBeVisible()
+  await expect(page.getByText('已创建对局')).toBeVisible()
 })
 
 test('creates a Gomoku session and reflects placed stones in real time', async ({ page, request }) => {
