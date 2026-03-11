@@ -27,13 +27,8 @@ function toGomokuSession(session: GameSession): GameSession<GomokuGameState> {
 }
 
 export function GomokuWorkspace({
-  game,
   session: rawSession,
-  error,
-  setupPanel,
   onSessionUpdate,
-  onRefreshSession,
-  onResetSession,
   onError,
 }: GameWorkspaceProps) {
   const session = toGomokuSession(rawSession)
@@ -99,15 +94,6 @@ export function GomokuWorkspace({
     }
   }
 
-  async function handleReset() {
-    try {
-      onError(null)
-      await onResetSession(session.id)
-    } catch (nextError) {
-      onError(nextError instanceof Error ? nextError.message : 'Reset failed')
-    }
-  }
-
   const lastMovePoint = session.state.lastMove?.point ?? null
   const winningLine = new Set(session.state.winningLine ?? [])
   const sessionEvents = [...session.events].sort((left, right) =>
@@ -139,59 +125,6 @@ export function GomokuWorkspace({
           )}
         </div>
       </aside>
-
-      <section className="workspace-footer">
-        <div className="panel-card workspace-footer-card">
-          {setupPanel}
-
-          <div className="footer-section">
-            <h2>Session</h2>
-            <p className="mono">{session.id}</p>
-            <p>
-              Last point: {lastMovePoint ?? 'none'} · Stones played: {session.state.moveCount}
-            </p>
-            <p>{game.description}</p>
-          </div>
-
-          <div className="footer-section">
-            <h2>Actions</h2>
-            <button className="primary-button" type="button" onClick={handleReset}>
-              Reset Session
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={async () => {
-                onError(null)
-                await onRefreshSession(session.id)
-              }}
-            >
-              Refresh Now
-            </button>
-          </div>
-
-          <div className="footer-section">
-            <h2>MCP Shape</h2>
-            <p>Expose tools such as:</p>
-            <ul>
-              <li>`list_games`</li>
-              <li>`list_sessions`</li>
-              <li>`search_tools`</li>
-              <li>`get_game_state`</li>
-              <li>`gomoku_get_legal_moves`</li>
-              <li>`gomoku_play_move`</li>
-              <li>`reset_session`</li>
-            </ul>
-          </div>
-
-          {error && (
-            <div className="footer-section error-card">
-              <h2>Error</h2>
-              <p>{error}</p>
-            </div>
-          )}
-        </div>
-      </section>
     </div>
   )
 }

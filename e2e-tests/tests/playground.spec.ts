@@ -22,7 +22,29 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   await expect(page.getByText('Sync: live')).toBeVisible()
   await expect(page.getByText('Turn: red')).toBeVisible()
   await expect(page.locator('.mono').first()).not.toHaveText(previousSessionId ?? '')
-  await expect(page.getByRole('heading', { name: 'Actions' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible()
+
+  const heroHeights = await page.evaluate(() => {
+    const heroPanel = document.querySelector('.hero-panel')?.getBoundingClientRect()
+    const toolbar = document.querySelector('.hero-toolbar')?.getBoundingClientRect()
+    const select = document.querySelector('.toolbar-row-primary select')?.getBoundingClientRect()
+    const createButton = document
+      .querySelector('.toolbar-row-primary .primary-button')
+      ?.getBoundingClientRect()
+
+    return {
+      heroHeight: heroPanel?.height ?? 0,
+      toolbarHeight: toolbar?.height ?? 0,
+      toolbarTop: toolbar?.top ?? 0,
+      selectTop: select?.top ?? 0,
+      buttonTop: createButton?.top ?? 0,
+    }
+  })
+
+  expect(Math.abs(heroHeights.heroHeight - heroHeights.toolbarHeight)).toBeLessThan(3)
+  expect(Math.abs(heroHeights.selectTop - heroHeights.buttonTop)).toBeLessThan(2)
+  expect(heroHeights.buttonTop - heroHeights.toolbarTop).toBeGreaterThan(8)
 
   const panelHeights = await page.evaluate(() => {
     const boardPanel = document.querySelector('.game-workspace-layout .board-panel')?.getBoundingClientRect()

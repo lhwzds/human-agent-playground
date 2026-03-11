@@ -65,8 +65,6 @@ describe('XiangqiWorkspace', () => {
       },
     ])
     const onSessionUpdate = vi.fn()
-    const onRefreshSession = vi.fn()
-    const onResetSession = vi.fn()
     const onError = vi.fn()
 
     vi.mocked(getXiangqiLegalMoves).mockResolvedValue([
@@ -86,10 +84,7 @@ describe('XiangqiWorkspace', () => {
         game={xiangqiGameCatalogItem}
         session={session}
         error={null}
-        setupPanel={<div>Setup</div>}
         onSessionUpdate={onSessionUpdate}
-        onRefreshSession={onRefreshSession}
-        onResetSession={onResetSession}
         onError={onError}
       />,
     )
@@ -105,33 +100,6 @@ describe('XiangqiWorkspace', () => {
     await waitFor(() => {
       expect(playXiangqiMove).toHaveBeenCalledWith('session-1', 'a4', 'a5')
       expect(onSessionUpdate).toHaveBeenCalledWith(nextSession)
-    })
-  })
-
-  it('resets the current session through the platform callback', async () => {
-    const session = createSession()
-    const onSessionUpdate = vi.fn()
-    const onRefreshSession = vi.fn()
-    const onResetSession = vi.fn().mockResolvedValue(session)
-    const onError = vi.fn()
-
-    const { getByRole } = render(
-      <XiangqiWorkspace
-        game={xiangqiGameCatalogItem}
-        session={session}
-        error={null}
-        setupPanel={<div>Setup</div>}
-        onSessionUpdate={onSessionUpdate}
-        onRefreshSession={onRefreshSession}
-        onResetSession={onResetSession}
-        onError={onError}
-      />,
-    )
-
-    fireEvent.click(getByRole('button', { name: 'Reset Session' }))
-
-    await waitFor(() => {
-      expect(onResetSession).toHaveBeenCalledWith('session-1')
     })
   })
 
@@ -215,10 +183,7 @@ describe('XiangqiWorkspace', () => {
         game={xiangqiGameCatalogItem}
         session={firstSession}
         error={null}
-        setupPanel={<div>Setup</div>}
         onSessionUpdate={vi.fn()}
-        onRefreshSession={vi.fn()}
-        onResetSession={vi.fn()}
         onError={vi.fn()}
       />,
     )
@@ -229,8 +194,6 @@ describe('XiangqiWorkspace', () => {
     expect(within(messageFeedCard as HTMLElement).getByText('Session Created')).toBeInTheDocument()
     expect(within(messageFeedCard as HTMLElement).getByText('a4 → a5')).toBeInTheDocument()
     expect(within(messageFeedCard as HTMLElement).getByText('Created a new Xiangqi session.')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Actions' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'MCP Shape' })).toBeInTheDocument()
     expect(container.querySelector('[data-square="a4"]')).toHaveClass('board-cell-last-from')
     expect(container.querySelector('[data-square="a5"]')).toHaveClass('board-cell-last-to')
 
@@ -239,10 +202,7 @@ describe('XiangqiWorkspace', () => {
         game={xiangqiGameCatalogItem}
         session={secondSession}
         error={null}
-        setupPanel={<div>Setup</div>}
         onSessionUpdate={vi.fn()}
-        onRefreshSession={vi.fn()}
-        onResetSession={vi.fn()}
         onError={vi.fn()}
       />,
     )
@@ -252,10 +212,7 @@ describe('XiangqiWorkspace', () => {
         game={xiangqiGameCatalogItem}
         session={thirdSession}
         error={null}
-        setupPanel={<div>Setup</div>}
         onSessionUpdate={vi.fn()}
-        onRefreshSession={vi.fn()}
-        onResetSession={vi.fn()}
         onError={vi.fn()}
       />,
     )

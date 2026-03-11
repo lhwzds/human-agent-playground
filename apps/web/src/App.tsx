@@ -20,9 +20,11 @@ interface BootstrapPayload {
 interface SessionSetupCardProps {
   games: GameCatalogItem[]
   selectedGameId: string
+  sessionId?: string
   onCreateSession: () => void
   onGameChange: (gameId: string) => void
-  embedded?: boolean
+  onRefreshSession?: () => void
+  onResetSession?: () => void
 }
 
 type LiveSyncState = 'connecting' | 'live' | 'reconnecting' | 'offline'
@@ -70,26 +72,53 @@ function resolveGameModule(gameId: string | undefined) {
 function SessionSetupCard({
   games,
   selectedGameId,
+  sessionId,
   onCreateSession,
   onGameChange,
-  embedded = false,
+  onRefreshSession,
+  onResetSession,
 }: SessionSetupCardProps) {
   return (
-    <div className={embedded ? 'footer-section' : 'panel-card'}>
-      <h2>Session Setup</h2>
-      <label className="field-block">
-        <span>Game</span>
-        <select value={selectedGameId} onChange={(event) => onGameChange(event.target.value)}>
-          {games.map((game) => (
-            <option key={game.id} value={game.id}>
-              {game.shortName}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button className="primary-button" type="button" onClick={onCreateSession}>
-        Create Session
-      </button>
+    <div className="hero-toolbar" role="toolbar" aria-label="Session controls">
+      <div className="toolbar-row toolbar-row-primary">
+        <label className="toolbar-field">
+          <span>Game</span>
+          <select value={selectedGameId} onChange={(event) => onGameChange(event.target.value)}>
+            {games.map((game) => (
+              <option key={game.id} value={game.id}>
+                {game.shortName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="primary-button toolbar-button" type="button" onClick={onCreateSession}>
+          Create Session
+        </button>
+      </div>
+      {sessionId ? (
+        <span className="toolbar-session">
+          <span>Session</span>
+          <span className="mono">{sessionId}</span>
+        </span>
+      ) : null}
+      {sessionId && (onRefreshSession || onResetSession) ? (
+        <div className="toolbar-row toolbar-row-actions">
+          {onRefreshSession ? (
+            <button
+              className="secondary-button toolbar-button"
+              type="button"
+              onClick={onRefreshSession}
+            >
+              Refresh
+            </button>
+          ) : null}
+          {onResetSession ? (
+            <button className="secondary-button toolbar-button" type="button" onClick={onResetSession}>
+              Reset
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -164,26 +193,81 @@ function App() {
     }
   }
 
+  async function handleRefreshSession() {
+    if (!session) {
+      return
+    }
+
+    try {
+      setError(null)
+      await refreshSession(session.id)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Refresh failed')
+    }
+  }
+
+  async function handleResetSession() {
+    if (!session) {
+      return
+    }
+
+    try {
+      setError(null)
+      const updated = await resetSession(session.id)
+      setSession(updated)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Reset failed')
+    }
+  }
+
   const activeGame = games.find((game) => game.id === (session?.gameId ?? selectedGameId))
   const activeGameModule = resolveGameModule(activeGame?.id)
   const summary = session && activeGameModule ? activeGameModule.getSummary(session) : null
+  const isCheck =
+    session &&
+    typeof session.state === 'object' &&
+    session.state !== null &&
+    typeof (session.state as { isCheck?: unknown }).isCheck === 'boolean' &&
+    (session.state as { isCheck: boolean }).isCheck
 
   return (
     <main className="app-shell">
       <section className="hero-panel">
-        <p className="eyebrow">Human Agent Playground</p>
-        <h1>Shared Tabletop Sessions For Humans And Agents</h1>
-        <p className="hero-copy">
-          One UI, one MCP endpoint, one session store. Games live in isolated folders, while
-          the platform lets humans and agents operate on the same match state and watch each
-          move land in real time.
-        </p>
-        <div className="meta-strip">
-          <span>Game: {activeGame?.shortName ?? session?.gameId ?? selectedGameId}</span>
-          <span>Sync: {syncState}</span>
-          <span>Turn: {summary?.turn ?? '...'}</span>
-          <span>Status: {summary?.status ?? '...'}</span>
-          <span>Winner: {summary?.winner ?? 'none'}</span>
+        <div className="hero-main">
+          <div className="hero-copy-block">
+            <p className="eyebrow">Human Agent Playground</p>
+            <h1>Shared Tabletop Sessions For Humans And Agents</h1>
+            <p className="hero-copy">
+              One UI, one MCP endpoint, one session store. Games live in isolated folders,
+              while the platform lets humans and agents operate on the same match state and
+              watch each move land in real time.
+            </p>
+            <div className="meta-strip">
+              <span>Game: {activeGame?.shortName ?? session?.gameId ?? selectedGameId}</span>
+              <span>Sync: {syncState}</span>
+              <span>Turn: {summary?.turn ?? '...'}</span>
+              <span>Status: {summary?.status ?? '...'}</span>
+              <span>Winner: {summary?.winner ?? 'none'}</span>
+              {isCheck ? <span>Check: active</span> : null}
+            </div>
+            {error ? (
+              <div className="hero-alert" role="alert">
+                <strong>Error</strong>
+                <p>{error}</p>
+              </div>
+            ) : null}
+          </div>
+          <div className="hero-controls">
+            <SessionSetupCard
+              games={games}
+              selectedGameId={selectedGameId}
+              sessionId={session?.id}
+              onCreateSession={handleCreateSession}
+              onGameChange={setSelectedGameId}
+              onRefreshSession={handleRefreshSession}
+              onResetSession={handleResetSession}
+            />
+          </div>
         </div>
       </section>
 
@@ -195,41 +279,15 @@ function App() {
         )}
 
         {!loading && !session && (
-          <>
-            <article className="board-panel">
-              <p className="empty-state">No session loaded.</p>
-            </article>
-            <aside className="side-panel">
-              <SessionSetupCard
-                games={games}
-                selectedGameId={selectedGameId}
-                onCreateSession={handleCreateSession}
-                onGameChange={setSelectedGameId}
-              />
-            </aside>
-          </>
+          <article className="board-panel workspace-fallback-panel">
+            <p className="empty-state">No session loaded. Create one from the header bar.</p>
+          </article>
         )}
 
         {!loading && session && !activeGameModule && (
-          <>
-            <article className="board-panel">
-              <p className="empty-state">No renderer is registered for {session.gameId}.</p>
-            </article>
-            <aside className="side-panel">
-              <SessionSetupCard
-                games={games}
-                selectedGameId={selectedGameId}
-                onCreateSession={handleCreateSession}
-                onGameChange={setSelectedGameId}
-              />
-              {error && (
-                <div className="panel-card error-card">
-                  <h2>Error</h2>
-                  <p>{error}</p>
-                </div>
-              )}
-            </aside>
-          </>
+          <article className="board-panel workspace-fallback-panel">
+            <p className="empty-state">No renderer is registered for {session.gameId}.</p>
+          </article>
         )}
 
         {!loading && session && activeGame && activeGameModule && (
@@ -237,22 +295,7 @@ function App() {
             game={activeGame}
             session={session}
             error={error}
-            setupPanel={
-              <SessionSetupCard
-                games={games}
-                selectedGameId={selectedGameId}
-                onCreateSession={handleCreateSession}
-                onGameChange={setSelectedGameId}
-                embedded
-              />
-            }
             onSessionUpdate={setSession}
-            onRefreshSession={refreshSession}
-            onResetSession={async (sessionId) => {
-              const updated = await resetSession(sessionId)
-              setSession(updated)
-              return updated
-            }}
             onError={setError}
           />
         )}

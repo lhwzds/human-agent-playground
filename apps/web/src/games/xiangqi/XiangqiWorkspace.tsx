@@ -29,13 +29,8 @@ function toXiangqiSession(session: GameSession): GameSession<XiangqiGameState> {
 }
 
 export function XiangqiWorkspace({
-  game,
   session: rawSession,
-  error,
-  setupPanel,
   onSessionUpdate,
-  onRefreshSession,
-  onResetSession,
   onError,
 }: GameWorkspaceProps) {
   const session = toXiangqiSession(rawSession)
@@ -117,26 +112,11 @@ export function XiangqiWorkspace({
     }
   }
 
-  async function handleReset() {
-    try {
-      onError(null)
-      await onResetSession(session.id)
-      setSelectedSquare(null)
-      setLegalMoves([])
-    } catch (nextError) {
-      onError(nextError instanceof Error ? nextError.message : 'Reset failed')
-    }
-  }
-
   const legalTargets = new Set(legalMoves.map((move) => move.to))
   const lastMove = session.state.lastMove
   const sessionEvents = [...session.events].sort((left, right) =>
     left.createdAt.localeCompare(right.createdAt),
   )
-  const selectedMovesLabel =
-    selectedSquare && legalMoves.length > 0
-      ? legalMoves.map((move) => move.to).join(', ')
-      : 'Select a piece to inspect legal moves.'
 
   return (
     <div className="game-workspace-layout">
@@ -165,64 +145,6 @@ export function XiangqiWorkspace({
           )}
         </div>
       </aside>
-
-      <section className="workspace-footer">
-        <div className="panel-card workspace-footer-card">
-          {setupPanel}
-
-          <div className="footer-section">
-          <h2>Session</h2>
-          <p className="mono">{session.id}</p>
-          <p>{selectedMovesLabel}</p>
-          <p>{game.description}</p>
-          </div>
-
-          {session.state.isCheck && (
-            <div className="footer-section check-card">
-              <h2>Check</h2>
-              <p>{session.state.turn} must respond to check before any other move is legal.</p>
-            </div>
-          )}
-
-          <div className="footer-section">
-            <h2>Actions</h2>
-            <button className="primary-button" type="button" onClick={handleReset}>
-              Reset Session
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={async () => {
-                onError(null)
-                await onRefreshSession(session.id)
-              }}
-            >
-              Refresh Now
-            </button>
-          </div>
-
-          <div className="footer-section">
-            <h2>MCP Shape</h2>
-            <p>Expose tools such as:</p>
-            <ul>
-              <li>`list_games`</li>
-              <li>`list_sessions`</li>
-              <li>`search_tools`</li>
-              <li>`get_game_state`</li>
-              <li>`xiangqi_get_legal_moves`</li>
-              <li>`xiangqi_play_move`</li>
-              <li>`reset_session`</li>
-            </ul>
-          </div>
-
-          {error && (
-            <div className="footer-section error-card">
-              <h2>Error</h2>
-              <p>{error}</p>
-            </div>
-          )}
-        </div>
-      </section>
     </div>
   )
 }

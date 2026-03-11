@@ -64,8 +64,6 @@ describe('GomokuWorkspace', () => {
       },
     ])
     const onSessionUpdate = vi.fn()
-    const onRefreshSession = vi.fn()
-    const onResetSession = vi.fn()
     const onError = vi.fn()
 
     vi.mocked(getGomokuLegalMoves).mockResolvedValue([{ point: 'h8' }])
@@ -76,10 +74,7 @@ describe('GomokuWorkspace', () => {
         game={gomokuGameCatalogItem}
         session={session}
         error={null}
-        setupPanel={<div>Setup</div>}
         onSessionUpdate={onSessionUpdate}
-        onRefreshSession={onRefreshSession}
-        onResetSession={onResetSession}
         onError={onError}
       />,
     )
@@ -152,10 +147,7 @@ describe('GomokuWorkspace', () => {
         game={gomokuGameCatalogItem}
         session={session}
         error={null}
-        setupPanel={<div>Setup</div>}
         onSessionUpdate={vi.fn()}
-        onRefreshSession={vi.fn()}
-        onResetSession={vi.fn()}
         onError={vi.fn()}
       />,
     )
@@ -168,7 +160,6 @@ describe('GomokuWorkspace', () => {
     expect(within(messageFeedCard as HTMLElement).getByText('Reasoning Summary')).toBeInTheDocument()
     expect(within(messageFeedCard as HTMLElement).getByText('Extend the central row while keeping both ends flexible.')).toBeInTheDocument()
     expect(within(messageFeedCard as HTMLElement).getAllByText('Placed ●')).toHaveLength(2)
-    expect(screen.getByRole('heading', { name: 'MCP Shape' })).toBeInTheDocument()
     expect(container.querySelector('[data-point="i8"]')).toHaveClass('gomoku-point-last')
   })
 })

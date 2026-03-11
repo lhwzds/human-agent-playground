@@ -11,10 +11,10 @@ export interface GameWorkspaceProps {
   game: GameCatalogItem
   session: GameSession
   error: string | null
-  setupPanel: ReactNode
   onSessionUpdate: (session: GameSession) => void
-  onRefreshSession: (sessionId: string) => Promise<GameSession>
-  onResetSession: (sessionId: string) => Promise<GameSession>
+  setupPanel?: ReactNode
+  onRefreshSession?: (sessionId: string) => Promise<GameSession>
+  onResetSession?: (sessionId: string) => Promise<GameSession>
   onError: (message: string | null) => void
 }
 
