@@ -28,6 +28,7 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   const heroHeights = await page.evaluate(() => {
     const heroPanel = document.querySelector('.hero-panel')?.getBoundingClientRect()
     const toolbar = document.querySelector('.hero-toolbar')?.getBoundingClientRect()
+    const primaryRow = document.querySelector('.toolbar-row-primary')?.getBoundingClientRect()
     const select = document.querySelector('.toolbar-row-primary select')?.getBoundingClientRect()
     const createButton = document
       .querySelector('.toolbar-row-session .primary-button')
@@ -47,6 +48,8 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
     return {
       heroHeight: heroPanel?.height ?? 0,
       toolbarHeight: toolbar?.height ?? 0,
+      toolbarWidth: toolbar?.width ?? 0,
+      primaryRowWidth: primaryRow?.width ?? 0,
       toolbarTop: toolbar?.top ?? 0,
       selectTop: select?.top ?? 0,
       buttonTop: createButton?.top ?? 0,
@@ -57,6 +60,7 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   })
 
   expect(Math.abs(heroHeights.heroHeight - heroHeights.toolbarHeight)).toBeLessThan(3)
+  expect(heroHeights.primaryRowWidth).toBeLessThan(heroHeights.toolbarWidth * 0.7)
   expect(heroHeights.buttonTop - heroHeights.selectTop).toBeGreaterThan(8)
   expect(Math.abs(heroHeights.sessionTop - heroHeights.buttonTop)).toBeLessThan(2)
   expect(heroHeights.buttonTop - heroHeights.languageBottom).toBeGreaterThan(8)
