@@ -65,6 +65,18 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
 
   await expect(messageFeedCard.getByText('a4 → a5')).toBeVisible()
   await expect(page.getByText('Turn: black')).toBeVisible()
+
+  const messageFeedMetrics = await page.evaluate(() => {
+    const feedList = document.querySelector('.message-feed-list')?.getBoundingClientRect()
+    const firstItem = document.querySelector('.message-feed-item')?.getBoundingClientRect()
+
+    return {
+      feedHeight: feedList?.height ?? 0,
+      firstItemHeight: firstItem?.height ?? 0,
+    }
+  })
+
+  expect(messageFeedMetrics.firstItemHeight).toBeLessThan(messageFeedMetrics.feedHeight * 0.7)
 })
 
 test('reflects external session moves in real time', async ({ page, request }) => {

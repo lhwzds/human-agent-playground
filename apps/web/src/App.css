@@ -621,6 +621,8 @@
   padding: 0;
   list-style: none;
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 12px;
   min-height: 0;
   max-height: 100%;
