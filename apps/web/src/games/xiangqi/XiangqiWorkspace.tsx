@@ -39,6 +39,7 @@ export function XiangqiWorkspace({
   session: rawSession,
   onSessionUpdate,
   onError,
+  gameOverDialog,
 }: GameWorkspaceProps) {
   const { t } = useI18n()
   const session = toXiangqiSession(rawSession)
@@ -137,6 +138,7 @@ export function XiangqiWorkspace({
           lastMoveTo={lastMove?.to ?? null}
           onSquareClick={handleSquareClick}
         />
+        {gameOverDialog}
       </article>
 
       <aside className="side-panel" style={feedHeight ? { height: `${feedHeight}px` } : undefined}>

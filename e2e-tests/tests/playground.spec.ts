@@ -29,42 +29,40 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
     const heroPanel = document.querySelector('.hero-panel')?.getBoundingClientRect()
     const toolbar = document.querySelector('.hero-toolbar')?.getBoundingClientRect()
     const primaryRow = document.querySelector('.toolbar-row-primary')?.getBoundingClientRect()
-    const select = document.querySelector('.toolbar-row-primary select')?.getBoundingClientRect()
+    const controls = document.querySelectorAll('.toolbar-row-primary select')
+    const select = controls.item(0)?.getBoundingClientRect()
+    const languageSelect = controls.item(1)?.getBoundingClientRect()
     const createButton = document
       .querySelector('.toolbar-row-session .primary-button')
       ?.getBoundingClientRect()
     const sessionCard = document.querySelector('.toolbar-row-session .toolbar-session')?.getBoundingClientRect()
-    const languageTrigger = document.querySelector('.language-menu-trigger')?.getBoundingClientRect()
-    const languageOverlapsCreateButton =
-      !!languageTrigger &&
-      !!createButton &&
-      !(
-        languageTrigger.right <= createButton.left ||
-        languageTrigger.left >= createButton.right ||
-        languageTrigger.bottom <= createButton.top ||
-        languageTrigger.top >= createButton.bottom
-      )
 
     return {
       heroHeight: heroPanel?.height ?? 0,
       toolbarHeight: toolbar?.height ?? 0,
-      toolbarWidth: toolbar?.width ?? 0,
-      primaryRowWidth: primaryRow?.width ?? 0,
       toolbarTop: toolbar?.top ?? 0,
+      primaryRowWidth: primaryRow?.width ?? 0,
+      gameWidth: (select?.width ?? 0),
       selectTop: select?.top ?? 0,
+      selectRight: select?.right ?? 0,
+      languageWidth: (languageSelect?.width ?? 0),
       buttonTop: createButton?.top ?? 0,
+      createButtonWidth: (createButton?.width ?? 0),
       sessionTop: sessionCard?.top ?? 0,
-      languageBottom: languageTrigger?.bottom ?? 0,
-      overlapsCreateButton: languageOverlapsCreateButton,
+      sessionWidth: (sessionCard?.width ?? 0),
+      languageLeft: languageSelect?.left ?? 0,
+      languageTop: languageSelect?.top ?? 0,
     }
   })
 
   expect(Math.abs(heroHeights.heroHeight - heroHeights.toolbarHeight)).toBeLessThan(3)
-  expect(heroHeights.primaryRowWidth).toBeLessThan(heroHeights.toolbarWidth * 0.7)
+  expect(heroHeights.gameWidth).toBeGreaterThan(0)
+  expect(Math.abs(heroHeights.gameWidth - heroHeights.languageWidth)).toBeLessThan(4)
+  expect(Math.abs(heroHeights.sessionWidth - heroHeights.createButtonWidth)).toBeLessThan(4)
+  expect(heroHeights.languageLeft - heroHeights.selectRight).toBeGreaterThanOrEqual(8)
+  expect(Math.abs(heroHeights.languageTop - heroHeights.selectTop)).toBeLessThan(6)
   expect(heroHeights.buttonTop - heroHeights.selectTop).toBeGreaterThan(8)
   expect(Math.abs(heroHeights.sessionTop - heroHeights.buttonTop)).toBeLessThan(2)
-  expect(heroHeights.buttonTop - heroHeights.languageBottom).toBeGreaterThan(8)
-  expect(heroHeights.overlapsCreateButton).toBe(false)
 
   const panelHeights = await page.evaluate(() => {
     const boardPanel = document.querySelector('.game-workspace-layout .board-panel')?.getBoundingClientRect()
@@ -224,33 +222,26 @@ test('keeps the hero controls aligned and leaves room in a single-message feed',
   const layoutMetrics = await page.evaluate(() => {
     const heroPanel = document.querySelector('.hero-panel')?.getBoundingClientRect()
     const heroToolbar = document.querySelector('.hero-toolbar')?.getBoundingClientRect()
-    const select = document.querySelector('.toolbar-row-primary select')?.getBoundingClientRect()
+    const controls = document.querySelectorAll('.toolbar-row-primary select')
+    const select = controls.item(0)?.getBoundingClientRect()
+    const languageSelect = controls.item(1)?.getBoundingClientRect()
     const createButton = document
       .querySelector('.toolbar-row-session .primary-button')
       ?.getBoundingClientRect()
     const sessionCard = document.querySelector('.toolbar-row-session .toolbar-session')?.getBoundingClientRect()
-    const languageTrigger = document.querySelector('.language-menu-trigger')?.getBoundingClientRect()
     const feedList = document.querySelector('.message-feed-list')?.getBoundingClientRect()
     const firstItem = document.querySelector('.message-feed-item')?.getBoundingClientRect()
-    const languageOverlapsCreateButton =
-      !!languageTrigger &&
-      !!createButton &&
-      !(
-        languageTrigger.right <= createButton.left ||
-        languageTrigger.left >= createButton.right ||
-        languageTrigger.bottom <= createButton.top ||
-        languageTrigger.top >= createButton.bottom
-      )
 
     return {
       heroHeight: heroPanel?.height ?? 0,
       toolbarHeight: heroToolbar?.height ?? 0,
       toolbarTop: heroToolbar?.top ?? 0,
       selectTop: select?.top ?? 0,
+      selectRight: select?.right ?? 0,
       buttonTop: createButton?.top ?? 0,
       sessionTop: sessionCard?.top ?? 0,
-      languageBottom: languageTrigger?.bottom ?? 0,
-      overlapsCreateButton: languageOverlapsCreateButton,
+      languageLeft: languageSelect?.left ?? 0,
+      languageTop: languageSelect?.top ?? 0,
       feedHeight: feedList?.height ?? 0,
       firstItemHeight: firstItem?.height ?? 0,
       messageCount: document.querySelectorAll('.message-feed-item').length,
@@ -258,18 +249,17 @@ test('keeps the hero controls aligned and leaves room in a single-message feed',
   })
 
   expect(Math.abs(layoutMetrics.heroHeight - layoutMetrics.toolbarHeight)).toBeLessThan(3)
+  expect(layoutMetrics.languageLeft - layoutMetrics.selectRight).toBeGreaterThanOrEqual(8)
+  expect(Math.abs(layoutMetrics.languageTop - layoutMetrics.selectTop)).toBeLessThan(6)
   expect(layoutMetrics.buttonTop - layoutMetrics.selectTop).toBeGreaterThan(8)
   expect(Math.abs(layoutMetrics.sessionTop - layoutMetrics.buttonTop)).toBeLessThan(2)
-  expect(layoutMetrics.buttonTop - layoutMetrics.languageBottom).toBeGreaterThan(8)
-  expect(layoutMetrics.overlapsCreateButton).toBe(false)
   expect(layoutMetrics.messageCount).toBe(1)
   expect(layoutMetrics.firstItemHeight).toBeLessThan(layoutMetrics.feedHeight * 0.7)
 })
 
 test('switches the shared interface to Chinese', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Language' }).click()
-  await page.getByRole('menuitemradio', { name: '中文' }).click()
+  await page.getByRole('combobox', { name: 'Language' }).selectOption('zh-CN')
   await page.locator('select').first().selectOption('gomoku')
   await page.getByRole('button', { name: '创建对局' }).click()
 
@@ -324,6 +314,53 @@ test('creates a Gomoku session and reflects placed stones in real time', async (
   await expect(messageFeedCard.getByText('Mirror the center extension to fight for the same row immediately.')).toBeVisible()
   await expect(page.getByText('Turn: black')).toBeVisible()
   await expect(page.locator('[data-point="i8"]')).toHaveClass(/gomoku-point-last/)
+})
+
+test('shows a game-over dialog for a finished Gomoku session and can restart it', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/')
+  await page.locator('select').first().selectOption('gomoku')
+  await expect(page.getByText('Game: Gomoku')).toBeVisible()
+  const previousSessionId = (await page.locator('.mono').first().textContent())?.trim()
+  await page.getByRole('button', { name: 'Create Session' }).click()
+  await expect(page.locator('.mono').first()).not.toHaveText(previousSessionId ?? '')
+  await expect(page.getByText('Turn: black')).toBeVisible()
+
+  const sessionId = (await page.locator('.mono').first().textContent())?.trim()
+  expect(sessionId).toBeTruthy()
+
+  const scriptedMoves = [
+    { point: 'h8' },
+    { point: 'h7' },
+    { point: 'i8' },
+    { point: 'i7' },
+    { point: 'j8' },
+    { point: 'j7' },
+    { point: 'k8' },
+    { point: 'k7' },
+    { point: 'l8' },
+  ]
+
+  for (const move of scriptedMoves) {
+    const response = await request.post(`${apiBaseUrl}/api/sessions/${sessionId}/moves`, {
+      data: move,
+    })
+
+    expect(response.ok()).toBe(true)
+  }
+
+  const dialog = page.getByRole('dialog')
+
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('Game Over')).toBeVisible()
+  await expect(dialog.getByText('Winner: black')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Restart' }).click()
+
+  await expect(page.getByText('Turn: black')).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
 })
 
 test('creates a Connect Four session and drops a legal opening disc', async ({ page }) => {

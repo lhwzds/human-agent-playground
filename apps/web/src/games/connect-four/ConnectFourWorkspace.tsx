@@ -38,6 +38,7 @@ export function ConnectFourWorkspace({
   session: rawSession,
   onSessionUpdate,
   onError,
+  gameOverDialog,
 }: GameWorkspaceProps) {
   const { t } = useI18n()
   const session = toConnectFourSession(rawSession)
@@ -118,6 +119,7 @@ export function ConnectFourWorkspace({
           winningLine={winningLine}
           onColumnClick={handleColumnClick}
         />
+        {gameOverDialog}
       </article>
 
       <aside className="side-panel" style={feedHeight ? { height: `${feedHeight}px` } : undefined}>

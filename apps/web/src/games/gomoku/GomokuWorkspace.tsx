@@ -37,6 +37,7 @@ export function GomokuWorkspace({
   session: rawSession,
   onSessionUpdate,
   onError,
+  gameOverDialog,
 }: GameWorkspaceProps) {
   const { t } = useI18n()
   const session = toGomokuSession(rawSession)
@@ -117,6 +118,7 @@ export function GomokuWorkspace({
           winningLine={winningLine}
           onPointClick={handlePointClick}
         />
+        {gameOverDialog}
       </article>
 
       <aside className="side-panel" style={feedHeight ? { height: `${feedHeight}px` } : undefined}>

@@ -86,7 +86,7 @@ function SessionSetupCard({
   onRefreshSession,
   onResetSession,
 }: SessionSetupCardProps) {
-  const { language, t } = useI18n()
+  const { language, setLanguage, t } = useI18n()
 
   return (
     <div className="hero-toolbar" role="toolbar" aria-label={t('toolbar.aria')}>
@@ -103,6 +103,17 @@ function SessionSetupCard({
                 {getGameLabel(language, game.id, game.shortName)}
               </option>
             ))}
+          </select>
+        </label>
+        <label className="toolbar-field toolbar-field-language">
+          <span>{t('toolbar.language')}</span>
+          <select
+            aria-label={t('toolbar.language')}
+            value={language}
+            onChange={(event) => setLanguage(event.target.value as 'en' | 'zh-CN')}
+          >
+            <option value="en">EN</option>
+            <option value="zh-CN">中文</option>
           </select>
         </label>
       </div>
@@ -144,68 +155,6 @@ function SessionSetupCard({
   )
 }
 
-function LanguageMenu() {
-  const { language, setLanguage, t } = useI18n()
-  const [open, setOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    function handlePointerDown(event: PointerEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setOpen(false)
-      }
-    }
-
-    window.addEventListener('pointerdown', handlePointerDown)
-    return () => {
-      window.removeEventListener('pointerdown', handlePointerDown)
-    }
-  }, [])
-
-  return (
-    <div ref={menuRef} className="language-menu">
-      <button
-        className="language-menu-trigger"
-        type="button"
-        aria-label={t('toolbar.language')}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        {language === 'zh-CN' ? '中' : 'EN'}
-      </button>
-      {open ? (
-        <div className="language-menu-dropdown" role="menu" aria-label={t('toolbar.language')}>
-          <button
-            className={`language-menu-option ${language === 'en' ? 'is-active' : ''}`}
-            type="button"
-            role="menuitemradio"
-            aria-checked={language === 'en'}
-            onClick={() => {
-              setLanguage('en')
-              setOpen(false)
-            }}
-          >
-            {t('toolbar.language.en')}
-          </button>
-          <button
-            className={`language-menu-option ${language === 'zh-CN' ? 'is-active' : ''}`}
-            type="button"
-            role="menuitemradio"
-            aria-checked={language === 'zh-CN'}
-            onClick={() => {
-              setLanguage('zh-CN')
-              setOpen(false)
-            }}
-          >
-            {t('toolbar.language.zh-CN')}
-          </button>
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
 function AppContent() {
   const { language, t } = useI18n()
   const [games, setGames] = useState<GameCatalogItem[]>([])
@@ -214,6 +163,8 @@ function AppContent() {
   const [syncState, setSyncState] = useState<LiveSyncState>('offline')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [activeGameOverSessionKey, setActiveGameOverSessionKey] = useState<string | null>(null)
+  const previousStatusBySessionRef = useRef<Map<string, string>>(new Map())
 
   useEffect(() => {
     let cancelled = false
@@ -318,11 +269,69 @@ function AppContent() {
     session.state !== null &&
     typeof (session.state as { isCheck?: unknown }).isCheck === 'boolean' &&
     (session.state as { isCheck: boolean }).isCheck
+  const finishedSessionKey =
+    session && summary?.status === 'finished' ? `${session.id}:${session.updatedAt}` : null
+  const showGameOverDialog =
+    Boolean(finishedSessionKey) && activeGameOverSessionKey === finishedSessionKey
+  const gameOverDialog =
+    showGameOverDialog && summary && activeGame ? (
+      <div className="board-panel-modal" role="presentation">
+        <section
+          className="board-panel-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="game-over-title"
+        >
+          <p className="eyebrow">{activeGameLabel}</p>
+          <h2 id="game-over-title">{t('modal.gameOverTitle')}</h2>
+          <p>{t('modal.gameOverSummary', { gameName: activeGameLabel })}</p>
+          <p>
+            {summary.winner === 'draw'
+              ? t('modal.gameOverDraw')
+              : t('modal.gameOverWinner', {
+                  winner: getWinnerLabel(language, summary.winner),
+                })}
+          </p>
+          <p>{t('modal.gameOverPrompt')}</p>
+          <div className="modal-actions">
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => {
+                void handleResetSession()
+                setActiveGameOverSessionKey(null)
+              }}
+            >
+              {t('modal.gameOverRestart')}
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setActiveGameOverSessionKey(null)}
+            >
+              {t('modal.gameOverKeep')}
+            </button>
+          </div>
+        </section>
+      </div>
+    ) : null
+
+  useEffect(() => {
+    if (!session || !summary) {
+      return
+    }
+
+    const previousStatus = previousStatusBySessionRef.current.get(session.id)
+    if (previousStatus && previousStatus !== 'finished' && summary.status === 'finished') {
+      setActiveGameOverSessionKey(`${session.id}:${session.updatedAt}`)
+    }
+
+    previousStatusBySessionRef.current.set(session.id, summary.status)
+  }, [session?.id, session?.updatedAt, summary?.status])
 
   return (
     <main className="app-shell">
       <section className="hero-panel">
-        <LanguageMenu />
         <div className="hero-main">
           <div className="hero-copy-block">
             <p className="eyebrow">Human Agent Playground</p>
@@ -395,6 +404,7 @@ function AppContent() {
             game={activeGame}
             session={session}
             error={error}
+            gameOverDialog={gameOverDialog}
             onSessionUpdate={setSession}
             onError={setError}
           />

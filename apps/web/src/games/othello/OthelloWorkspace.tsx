@@ -37,6 +37,7 @@ export function OthelloWorkspace({
   session: rawSession,
   onSessionUpdate,
   onError,
+  gameOverDialog,
 }: GameWorkspaceProps) {
   const { t } = useI18n()
   const session = toOthelloSession(rawSession)
@@ -137,6 +138,7 @@ export function OthelloWorkspace({
           lastMovePoint={lastMovePoint}
           onPointClick={handlePointClick}
         />
+        {gameOverDialog}
       </article>
 
       <aside className="side-panel" style={feedHeight ? { height: `${feedHeight}px` } : undefined}>

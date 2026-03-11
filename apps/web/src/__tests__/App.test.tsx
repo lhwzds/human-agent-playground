@@ -354,6 +354,7 @@ describe('App', () => {
     expect(heroToolbar).not.toBeNull()
     expect(heroPanel?.contains(heroToolbar ?? null)).toBe(true)
     expect(primaryRow?.querySelector('select')).not.toBeNull()
+    expect(primaryRow?.querySelectorAll('select')).toHaveLength(2)
     expect(primaryRow?.querySelector('.primary-button')).toBeNull()
     expect(sessionRow?.querySelector('.toolbar-session')).not.toBeNull()
     expect(sessionRow?.querySelector('.primary-button')).not.toBeNull()
@@ -419,12 +420,13 @@ describe('App', () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Language' })).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Language' })).toBeInTheDocument()
       expect(screen.getByText('Game: Gomoku')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Language' }))
-    fireEvent.click(screen.getByRole('menuitemradio', { name: '中文' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Language' }), {
+      target: { value: 'zh-CN' },
+    })
 
     await waitFor(() => {
       expect(screen.getByText('供人类与智能体共享的棋盘对局')).toBeInTheDocument()
@@ -433,6 +435,163 @@ describe('App', () => {
       expect(screen.getByText('当前行棋: 黑方')).toBeInTheDocument()
       expect(screen.getByRole('heading', { name: '消息流' })).toBeInTheDocument()
       expect(screen.getByText('已创建对局')).toBeInTheDocument()
+    })
+  })
+
+  it('does not open a game-over dialog when booting into an older finished session', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'gomoku',
+        title: 'Gomoku',
+        shortName: 'Gomoku',
+        description: 'A 15x15 connection game where players race to make five in a row.',
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-gmk-finished',
+        gameId: 'gomoku',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:05:00.000Z',
+        events: [],
+        state: {
+          kind: 'gomoku',
+          turn: 'white',
+          status: 'finished',
+          winner: 'black',
+          lastMove: {
+            point: 'l8',
+            side: 'black',
+            stone: { side: 'black', display: '●' },
+            notation: 'l8',
+          },
+          moveCount: 9,
+          winningLine: ['h8', 'i8', 'j8', 'k8', 'l8'],
+          board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+        },
+      },
+    ])
+    vi.mocked(resetSession).mockResolvedValue({
+      id: 'session-gmk-finished',
+      gameId: 'gomoku',
+      createdAt: '2026-03-07T00:00:00.000Z',
+      updatedAt: '2026-03-07T00:06:00.000Z',
+      events: [],
+      state: {
+        kind: 'gomoku',
+        turn: 'black',
+        status: 'active',
+        winner: null,
+        lastMove: null,
+        moveCount: 0,
+        winningLine: null,
+        board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Status: finished')).toBeInTheDocument()
+      expect(screen.getByText('Winner: black')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(resetSession).not.toHaveBeenCalled()
+  })
+
+  it('shows a game-over dialog when the active session finishes and can restart it', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'gomoku',
+        title: 'Gomoku',
+        shortName: 'Gomoku',
+        description: 'A 15x15 connection game where players race to make five in a row.',
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-gmk-live',
+        gameId: 'gomoku',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:01:00.000Z',
+        events: [],
+        state: {
+          kind: 'gomoku',
+          turn: 'black',
+          status: 'active',
+          winner: null,
+          lastMove: null,
+          moveCount: 0,
+          winningLine: null,
+          board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+        },
+      },
+    ])
+    vi.mocked(resetSession).mockResolvedValue({
+      id: 'session-gmk-live',
+      gameId: 'gomoku',
+      createdAt: '2026-03-07T00:00:00.000Z',
+      updatedAt: '2026-03-07T00:06:00.000Z',
+      events: [],
+      state: {
+        kind: 'gomoku',
+        turn: 'black',
+        status: 'active',
+        winner: null,
+        lastMove: null,
+        moveCount: 0,
+        winningLine: null,
+        board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Status: active')).toBeInTheDocument()
+    })
+
+    act(() => {
+      emitSessionUpdate?.({
+        id: 'session-gmk-live',
+        gameId: 'gomoku',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:05:00.000Z',
+        events: [],
+        state: {
+          kind: 'gomoku',
+          turn: 'white',
+          status: 'finished',
+          winner: 'black',
+          lastMove: {
+            point: 'l8',
+            side: 'black',
+            stone: { side: 'black', display: '●' },
+            notation: 'l8',
+          },
+          moveCount: 9,
+          winningLine: ['h8', 'i8', 'j8', 'k8', 'l8'],
+          board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+        },
+      })
+    })
+
+    await waitFor(() => {
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toBeInTheDocument()
+      expect(within(dialog).getByText('Game Over')).toBeInTheDocument()
+      expect(within(dialog).getByText('Winner: black')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Restart' }).click()
+    })
+
+    await waitFor(() => {
+      expect(resetSession).toHaveBeenCalledWith('session-gmk-live')
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(screen.getByText('Turn: black')).toBeInTheDocument()
     })
   })
 })
