@@ -1,0 +1,26 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      PORT: 8790
+      HUMAN_AGENT_PLAYGROUND_DATA_PATH: /data/sessions.json
+    ports:
+      - "${HOST_API_PORT:-8790}:8790"
+    volumes:
+      - human-agent-playground-data:/data
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_URL: "${VITE_API_URL:-http://localhost:8790}"
+    depends_on:
+      - server
+    ports:
+      - "${HOST_WEB_PORT:-4178}:4178"
+
+volumes:
+  human-agent-playground-data:

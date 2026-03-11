@@ -1,0 +1,72 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      PORT: 8790
+      HUMAN_AGENT_PLAYGROUND_DATA_PATH: /data/sessions.json
+      VITE_API_URL: "${VITE_API_URL:-http://127.0.0.1:8793}"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "500"
+      TSC_WATCHFILE: FixedPollingInterval
+      TSC_WATCHDIRECTORY: FixedPollingInterval
+    ports:
+      - "${DEV_HOST_API_PORT:-8793}:8790"
+      - "${DEV_HOST_WEB_PORT:-4181}:4178"
+    volumes:
+      - human-agent-playground-dev-data:/data
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/server/src
+          target: /app/apps/server/src
+        - action: sync
+          path: ./apps/web/src
+          target: /app/apps/web/src
+        - action: sync
+          path: ./apps/web/index.html
+          target: /app/apps/web/index.html
+        - action: sync
+          path: ./apps/web/vite.config.ts
+          target: /app/apps/web/vite.config.ts
+        - action: sync
+          path: ./packages/core/src
+          target: /app/packages/core/src
+        - action: sync
+          path: ./games/xiangqi/src
+          target: /app/games/xiangqi/src
+        - action: sync
+          path: ./games/gomoku/src
+          target: /app/games/gomoku/src
+        - action: sync
+          path: ./games/connect-four/src
+          target: /app/games/connect-four/src
+        - action: sync
+          path: ./games/othello/src
+          target: /app/games/othello/src
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./package-lock.json
+        - action: rebuild
+          path: ./apps/server/package.json
+        - action: rebuild
+          path: ./apps/web/package.json
+        - action: rebuild
+          path: ./packages/core/package.json
+        - action: rebuild
+          path: ./games/xiangqi/package.json
+        - action: rebuild
+          path: ./games/gomoku/package.json
+        - action: rebuild
+          path: ./games/connect-four/package.json
+        - action: rebuild
+          path: ./games/othello/package.json
+        - action: rebuild
+          path: ./Dockerfile.dev
+        - action: rebuild
+          path: ./docker/dev-entrypoint.sh
+
+volumes:
+  human-agent-playground-dev-data:
