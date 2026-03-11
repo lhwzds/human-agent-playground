@@ -86,10 +86,16 @@ describe('Streamable HTTP MCP server', () => {
         'create_session',
         'get_game_state',
         'wait_for_turn',
+        'connect_four_get_legal_moves',
+        'connect_four_play_move',
+        'connect_four_play_move_and_wait',
         'reset_session',
         'gomoku_get_legal_moves',
         'gomoku_play_move',
         'gomoku_play_move_and_wait',
+        'othello_get_legal_moves',
+        'othello_play_move',
+        'othello_play_move_and_wait',
         'xiangqi_get_legal_moves',
         'xiangqi_play_move',
         'xiangqi_play_move_and_wait',
@@ -104,11 +110,27 @@ describe('Streamable HTTP MCP server', () => {
       }),
     )
     expect(
+      tools.tools.find((tool) => tool.name === 'connect_four_play_move')?._meta?.['human-agent-playground/tool'],
+    ).toEqual(
+      expect.objectContaining({
+        category: 'gameplay',
+        gameId: 'connect-four',
+      }),
+    )
+    expect(
       tools.tools.find((tool) => tool.name === 'gomoku_play_move')?._meta?.['human-agent-playground/tool'],
     ).toEqual(
       expect.objectContaining({
         category: 'gameplay',
         gameId: 'gomoku',
+      }),
+    )
+    expect(
+      tools.tools.find((tool) => tool.name === 'othello_play_move')?._meta?.['human-agent-playground/tool'],
+    ).toEqual(
+      expect.objectContaining({
+        category: 'gameplay',
+        gameId: 'othello',
       }),
     )
     expect(
@@ -171,6 +193,42 @@ describe('Streamable HTTP MCP server', () => {
       'gomoku_get_legal_moves',
       'gomoku_play_move',
       'gomoku_play_move_and_wait',
+    ])
+
+    const connectFourSearchResult = extractPayload(
+      await client.callTool({
+        name: 'search_tools',
+        arguments: {
+          category: 'gameplay',
+          gameId: 'connect-four',
+        },
+      }),
+    ) as {
+      tools: Array<{ name: string }>
+    }
+
+    expect(connectFourSearchResult.tools.map((tool) => tool.name)).toEqual([
+      'connect_four_get_legal_moves',
+      'connect_four_play_move',
+      'connect_four_play_move_and_wait',
+    ])
+
+    const othelloSearchResult = extractPayload(
+      await client.callTool({
+        name: 'search_tools',
+        arguments: {
+          category: 'gameplay',
+          gameId: 'othello',
+        },
+      }),
+    ) as {
+      tools: Array<{ name: string }>
+    }
+
+    expect(othelloSearchResult.tools.map((tool) => tool.name)).toEqual([
+      'othello_get_legal_moves',
+      'othello_play_move',
+      'othello_play_move_and_wait',
     ])
 
     const created = extractPayload(

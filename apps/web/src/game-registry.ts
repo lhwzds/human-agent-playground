@@ -1,8 +1,15 @@
+import { connectFourGameModule } from './games/connect-four'
 import { gomokuGameModule } from './games/gomoku'
+import { othelloGameModule } from './games/othello'
 import { xiangqiGameModule } from './games/xiangqi'
 import type { GameModule } from './games/types'
 
-const gameModules: GameModule[] = [xiangqiGameModule, gomokuGameModule]
+const gameModules: GameModule[] = [
+  xiangqiGameModule,
+  gomokuGameModule,
+  connectFourGameModule,
+  othelloGameModule,
+]
 
 const gameModuleById = new Map(gameModules.map((module) => [module.gameId, module]))
 

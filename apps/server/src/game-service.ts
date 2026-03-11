@@ -596,15 +596,22 @@ function parseMoveEventDetails(state: unknown): Record<string, unknown> {
 
   const move = (state as { lastMove: { [key: string]: unknown } }).lastMove
   return {
+    column: move.column,
+    row: move.row,
     point: move.point,
     from: move.from,
     to: move.to,
     side: move.side,
     notation: move.notation,
+    flippedPoints: Array.isArray(move.flippedPoints) ? move.flippedPoints : undefined,
     pieceDisplay:
       typeof move.piece === 'object' && move.piece !== null ? (move.piece as { display?: unknown }).display : undefined,
     stoneDisplay:
-      typeof move.stone === 'object' && move.stone !== null ? (move.stone as { display?: unknown }).display : undefined,
+      typeof move.stone === 'object' && move.stone !== null
+        ? (move.stone as { display?: unknown }).display
+        : typeof move.disc === 'object' && move.disc !== null
+          ? (move.disc as { display?: unknown }).display
+          : undefined,
     capturedDisplay:
       typeof move.captured === 'object' && move.captured !== null
         ? (move.captured as { display?: unknown }).display

@@ -44,6 +44,8 @@ describe('GameService', () => {
     const games = await service.listGames()
     expect(games.map((game) => game.id)).toContain('xiangqi')
     expect(games.map((game) => game.id)).toContain('gomoku')
+    expect(games.map((game) => game.id)).toContain('connect-four')
+    expect(games.map((game) => game.id)).toContain('othello')
 
     const error = await service.createSession({ gameId: 'go' }).catch((value) => value)
     expect(error).toBeInstanceOf(Error)
@@ -75,6 +77,66 @@ describe('GameService', () => {
         details: expect.objectContaining({
           point: 'l8',
           stoneDisplay: '●',
+        }),
+      }),
+    )
+  })
+
+  it('supports Connect Four session creation, disc drops, and win detection', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    const service = new GameService(join(directory, 'sessions.json'))
+
+    let session = await service.createSession({ gameId: 'connect-four' })
+    expect(session.state.turn).toBe('red')
+
+    for (const column of [1, 1, 2, 2, 3, 3, 4] as const) {
+      session = await service.playMove(session.id, { column })
+    }
+
+    expect(session.state.status).toBe('finished')
+    expect(session.state.winner).toBe('red')
+    expect(session.state.lastMove).toEqual(
+      expect.objectContaining({
+        point: 'd1',
+        side: 'red',
+      }),
+    )
+    expect(session.state.winningLine).toEqual(['a1', 'b1', 'c1', 'd1'])
+    expect(session.events.at(-1)).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+        details: expect.objectContaining({
+          column: 4,
+          point: 'd1',
+        }),
+      }),
+    )
+  })
+
+  it('supports Othello session creation, flips, and score tracking', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    const service = new GameService(join(directory, 'sessions.json'))
+
+    const session = await service.createSession({ gameId: 'othello' })
+    const updated = await service.playMove(session.id, { point: 'd3' })
+
+    expect(updated.state.turn).toBe('white')
+    expect(updated.state.blackCount).toBe(4)
+    expect(updated.state.whiteCount).toBe(1)
+    expect(updated.state.lastMove).toEqual(
+      expect.objectContaining({
+        point: 'd3',
+        side: 'black',
+        flippedPoints: ['d4'],
+      }),
+    )
+    expect(updated.events.at(-1)).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+        details: expect.objectContaining({
+          point: 'd3',
+          flippedPoints: ['d4'],
+          side: 'black',
         }),
       }),
     )

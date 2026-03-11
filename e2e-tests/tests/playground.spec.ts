@@ -274,3 +274,62 @@ test('creates a Gomoku session and reflects placed stones in real time', async (
   await expect(page.getByText('Turn: black')).toBeVisible()
   await expect(page.locator('[data-point="i8"]')).toHaveClass(/gomoku-point-last/)
 })
+
+test('creates a Connect Four session and drops a legal opening disc', async ({ page }) => {
+  const messageFeedCard = page.locator('.panel-card', {
+    has: page.getByRole('heading', { name: 'Message Feed' }),
+  })
+
+  await page.goto('/')
+  await page.locator('select').first().selectOption('connect-four')
+  await page.getByRole('button', { name: 'Create Session' }).click()
+
+  await expect(page.getByText('Game: Connect Four')).toBeVisible()
+  await expect(page.getByText('Turn: red')).toBeVisible()
+  await expect(page.locator('[data-point="d6"]')).toBeVisible()
+
+  await page.locator('[data-point="d6"]').click()
+
+  await expect(messageFeedCard.locator('strong', { hasText: 'd1' })).toBeVisible()
+  await expect(messageFeedCard.getByText('Dropped red disc in column 4 (d1)')).toBeVisible()
+  await expect(page.getByText('Turn: yellow')).toBeVisible()
+  await expect(page.locator('[data-point="d1"]')).toHaveClass(/connect-four-cell-last/)
+})
+
+test('creates an Othello session and reflects legal opening play', async ({ page, request }) => {
+  const messageFeedCard = page.locator('.panel-card', {
+    has: page.getByRole('heading', { name: 'Message Feed' }),
+  })
+
+  await page.goto('/')
+  await page.locator('select').first().selectOption('othello')
+  await page.getByRole('button', { name: 'Create Session' }).click()
+
+  await expect(page.getByText('Game: Othello')).toBeVisible()
+  await expect(page.getByText('Turn: black')).toBeVisible()
+  await expect(page.locator('.othello-disc')).toHaveCount(4)
+  await expect(page.locator('.othello-legal-marker')).toHaveCount(4)
+
+  const sessionId = (await page.locator('.mono').first().textContent())?.trim()
+  expect(sessionId).toBeTruthy()
+
+  const response = await request.post(`${apiBaseUrl}/api/sessions/${sessionId}/moves`, {
+    data: {
+      point: 'd3',
+      actorKind: 'agent',
+      channel: 'mcp',
+      reasoning: {
+        summary: 'Take the standard opening edge and flip one central disc.',
+        reasoningSteps: ['d3 is legal and immediately flips d4 to black.'],
+        confidence: 0.73,
+      },
+    },
+  })
+
+  expect(response.ok()).toBe(true)
+  await expect(messageFeedCard.locator('strong', { hasText: 'd3' })).toBeVisible()
+  await expect(messageFeedCard.getByText('Placed ● and flipped 1 disc: d4')).toBeVisible()
+  await expect(messageFeedCard.getByText('Reasoning Summary')).toBeVisible()
+  await expect(page.getByText('Turn: white')).toBeVisible()
+  await expect(page.locator('[data-point="d3"]')).toHaveClass(/othello-cell-last/)
+})

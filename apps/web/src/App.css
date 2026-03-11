@@ -564,6 +564,180 @@
   border: 2px solid rgba(180, 109, 24, 0.92);
 }
 
+.connect-four-board-shell {
+  padding: 20px;
+  background: linear-gradient(180deg, #2960a5 0%, #21487e 100%);
+}
+
+.connect-four-layout {
+  display: grid;
+  gap: 12px;
+}
+
+.connect-four-column-labels {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(44px, 1fr));
+  align-items: center;
+  justify-items: center;
+}
+
+.connect-four-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(44px, 1fr));
+  grid-template-rows: repeat(6, minmax(44px, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border-radius: 24px;
+  background: rgba(18, 53, 99, 0.88);
+  border: 2px solid rgba(12, 31, 59, 0.55);
+}
+
+.connect-four-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.connect-four-slot {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: rgba(235, 244, 255, 0.92);
+  box-shadow: inset 0 2px 6px rgba(33, 72, 126, 0.18);
+}
+
+.connect-four-disc {
+  position: relative;
+  z-index: 1;
+  width: 78%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  box-shadow:
+    0 8px 14px rgba(9, 24, 46, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+.connect-four-disc-red {
+  background: radial-gradient(circle at 30% 30%, #ff8e75 0%, #df4f33 58%, #a52614 100%);
+}
+
+.connect-four-disc-yellow {
+  background: radial-gradient(circle at 30% 30%, #fff3a5 0%, #f0c54c 58%, #b47f12 100%);
+}
+
+.connect-four-cell-last::after,
+.connect-four-cell-winning::before {
+  content: '';
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.connect-four-cell-last::after {
+  border: 2px solid rgba(34, 113, 70, 0.92);
+  box-shadow: 0 0 0 4px rgba(34, 113, 70, 0.18);
+}
+
+.connect-four-cell-winning::before {
+  border: 2px solid rgba(180, 109, 24, 0.92);
+}
+
+.othello-board-shell {
+  padding: 20px;
+  background: linear-gradient(180deg, #2f7144 0%, #255937 100%);
+}
+
+.othello-layout {
+  --othello-axis-gutter: 24px;
+  display: grid;
+  grid-template-columns: var(--othello-axis-gutter) minmax(0, 1fr);
+  grid-template-rows: var(--othello-axis-gutter) minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.othello-top-spacer {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.othello-file-labels {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(40px, 1fr));
+  align-items: center;
+  justify-items: center;
+}
+
+.othello-rank-labels {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-rows: repeat(8, minmax(40px, 1fr));
+  align-items: center;
+  justify-items: center;
+}
+
+.othello-grid {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(40px, 1fr));
+  grid-template-rows: repeat(8, minmax(40px, 1fr));
+  background: rgba(25, 86, 46, 0.92);
+  border: 2px solid rgba(13, 54, 29, 0.65);
+}
+
+.othello-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(231, 246, 225, 0.18);
+  background: rgba(43, 121, 67, 0.84);
+  cursor: pointer;
+}
+
+.othello-disc {
+  width: 74%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  box-shadow:
+    0 8px 14px rgba(8, 27, 15, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.othello-disc-black {
+  background: radial-gradient(circle at 30% 30%, #676767 0%, #1e1e1e 58%, #070707 100%);
+}
+
+.othello-disc-white {
+  background: radial-gradient(circle at 30% 30%, #fffefc 0%, #ece5d8 58%, #c1b6a3 100%);
+  border: 1px solid rgba(31, 31, 31, 0.18);
+}
+
+.othello-legal-marker {
+  width: 18%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: rgba(238, 246, 233, 0.82);
+}
+
+.othello-cell-last::after {
+  content: '';
+  position: absolute;
+  inset: 10%;
+  border-radius: 50%;
+  border: 2px solid rgba(180, 109, 24, 0.92);
+  pointer-events: none;
+}
+
 .side-panel {
   display: flex;
   min-height: 0;
@@ -875,6 +1049,33 @@
 
   .piece {
     font-size: 18px;
+  }
+
+  .connect-four-column-labels {
+    grid-template-columns: repeat(7, minmax(28px, 1fr));
+  }
+
+  .connect-four-grid {
+    grid-template-columns: repeat(7, minmax(28px, 1fr));
+    grid-template-rows: repeat(6, minmax(28px, 1fr));
+  }
+
+  .othello-layout {
+    --othello-axis-gutter: 18px;
+    gap: 6px;
+  }
+
+  .othello-file-labels {
+    grid-template-columns: repeat(8, minmax(28px, 1fr));
+  }
+
+  .othello-rank-labels {
+    grid-template-rows: repeat(8, minmax(28px, 1fr));
+  }
+
+  .othello-grid {
+    grid-template-columns: repeat(8, minmax(28px, 1fr));
+    grid-template-rows: repeat(8, minmax(28px, 1fr));
   }
 
   .toolbar-field,
