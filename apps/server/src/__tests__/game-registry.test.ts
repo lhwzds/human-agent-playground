@@ -1,3 +1,4 @@
+import { chessGameStateSchema } from '@human-agent-playground/game-chess'
 import { connectFourGameStateSchema } from '@human-agent-playground/game-connect-four'
 import { gomokuGameStateSchema } from '@human-agent-playground/game-gomoku'
 import { othelloGameStateSchema } from '@human-agent-playground/game-othello'
@@ -9,6 +10,7 @@ import { getGameAdapter, listGameCatalog } from '../game-registry.js'
 describe('game registry', () => {
   it('lists registered games and rejects unsupported adapters', () => {
     expect(listGameCatalog().map((game) => game.id)).toContain('xiangqi')
+    expect(listGameCatalog().map((game) => game.id)).toContain('chess')
     expect(listGameCatalog().map((game) => game.id)).toContain('gomoku')
     expect(listGameCatalog().map((game) => game.id)).toContain('connect-four')
     expect(listGameCatalog().map((game) => game.id)).toContain('othello')
@@ -26,6 +28,20 @@ describe('game registry', () => {
     expect(nextState.turn).toBe('black')
     expect(nextState.lastMove?.from).toBe('a4')
     expect(nextState.lastMove?.to).toBe('a5')
+  })
+
+  it('routes legal moves and move execution through the Chess adapter', () => {
+    const adapter = getGameAdapter('chess')
+    const state = adapter.createInitialState()
+
+    const moves = adapter.listLegalMoves(state, { from: 'e2' }) as Array<{ to: string }>
+    expect(moves.some((move) => move.to === 'e4')).toBe(true)
+
+    const nextState = chessGameStateSchema.parse(adapter.playMove(state, { from: 'e2', to: 'e4' }))
+    expect(nextState.turn).toBe('black')
+    expect(nextState.lastMove?.from).toBe('e2')
+    expect(nextState.lastMove?.to).toBe('e4')
+    expect(nextState.lastMove?.san).toBe('e4')
   })
 
   it('routes legal moves and stone placement through the Gomoku adapter', () => {

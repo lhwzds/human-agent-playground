@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
 import type { GameService } from '../game-service.js'
+import { createChessToolCatalog } from './register-chess-tools.js'
 import { createConnectFourToolCatalog } from './register-connect-four-tools.js'
 import { createGomokuToolCatalog } from './register-gomoku-tools.js'
 import { createOthelloToolCatalog } from './register-othello-tools.js'
@@ -18,6 +19,7 @@ export function createMcpServer(service: GameService) {
   const getAllTools = () => toolCatalog
 
   toolCatalog.push(...createPlatformToolCatalog(service, getAllTools))
+  toolCatalog.push(...createChessToolCatalog(service))
   toolCatalog.push(...createConnectFourToolCatalog(service))
   toolCatalog.push(...createGomokuToolCatalog(service))
   toolCatalog.push(...createOthelloToolCatalog(service))

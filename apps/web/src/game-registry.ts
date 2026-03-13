@@ -1,3 +1,4 @@
+import { chessGameModule } from './games/chess'
 import { connectFourGameModule } from './games/connect-four'
 import { gomokuGameModule } from './games/gomoku'
 import { othelloGameModule } from './games/othello'
@@ -6,6 +7,7 @@ import type { GameModule } from './games/types'
 
 const gameModules: GameModule[] = [
   xiangqiGameModule,
+  chessGameModule,
   gomokuGameModule,
   connectFourGameModule,
   othelloGameModule,

@@ -603,6 +603,7 @@ function parseMoveEventDetails(state: unknown): Record<string, unknown> {
     to: move.to,
     side: move.side,
     notation: move.notation,
+    san: typeof move.san === 'string' ? move.san : undefined,
     flippedPoints: Array.isArray(move.flippedPoints) ? move.flippedPoints : undefined,
     pieceDisplay:
       typeof move.piece === 'object' && move.piece !== null ? (move.piece as { display?: unknown }).display : undefined,
@@ -615,6 +616,10 @@ function parseMoveEventDetails(state: unknown): Record<string, unknown> {
     capturedDisplay:
       typeof move.captured === 'object' && move.captured !== null
         ? (move.captured as { display?: unknown }).display
+        : null,
+    promotionDisplay:
+      typeof move.promotion === 'object' && move.promotion !== null
+        ? (move.promotion as { display?: unknown }).display
         : null,
   }
 }

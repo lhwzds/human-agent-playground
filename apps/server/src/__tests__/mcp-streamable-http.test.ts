@@ -86,6 +86,9 @@ describe('Streamable HTTP MCP server', () => {
         'create_session',
         'get_game_state',
         'wait_for_turn',
+        'chess_get_legal_moves',
+        'chess_play_move',
+        'chess_play_move_and_wait',
         'connect_four_get_legal_moves',
         'connect_four_play_move',
         'connect_four_play_move_and_wait',
@@ -107,6 +110,14 @@ describe('Streamable HTTP MCP server', () => {
       expect.objectContaining({
         category: 'catalog',
         tags: expect.arrayContaining(['tools', 'search']),
+      }),
+    )
+    expect(
+      tools.tools.find((tool) => tool.name === 'chess_play_move')?._meta?.['human-agent-playground/tool'],
+    ).toEqual(
+      expect.objectContaining({
+        category: 'gameplay',
+        gameId: 'chess',
       }),
     )
     expect(
@@ -177,6 +188,24 @@ describe('Streamable HTTP MCP server', () => {
       'xiangqi_play_move_and_wait',
     ])
 
+    const chessSearchResult = extractPayload(
+      await client.callTool({
+        name: 'search_tools',
+        arguments: {
+          category: 'gameplay',
+          gameId: 'chess',
+        },
+      }),
+    ) as {
+      tools: Array<{ name: string }>
+    }
+
+    expect(chessSearchResult.tools.map((tool) => tool.name)).toEqual([
+      'chess_get_legal_moves',
+      'chess_play_move',
+      'chess_play_move_and_wait',
+    ])
+
     const gomokuSearchResult = extractPayload(
       await client.callTool({
         name: 'search_tools',
@@ -245,6 +274,53 @@ describe('Streamable HTTP MCP server', () => {
     }
 
     expect(created.state.turn).toBe('red')
+
+    const chessCreated = extractPayload(
+      await client.callTool({
+        name: 'create_session',
+        arguments: {
+          gameId: 'chess',
+        },
+      }),
+    ) as {
+      id: string
+      state: { turn: string }
+    }
+
+    expect(chessCreated.state.turn).toBe('white')
+
+    const chessLegalMoves = extractPayload(
+      await client.callTool({
+        name: 'chess_get_legal_moves',
+        arguments: {
+          sessionId: chessCreated.id,
+          from: 'e2',
+        },
+      }),
+    ) as { moves: Array<{ to: string }> }
+
+    expect(chessLegalMoves.moves.map((move) => move.to)).toEqual(expect.arrayContaining(['e3', 'e4']))
+
+    const chessPlayed = extractPayload(
+      await client.callTool({
+        name: 'chess_play_move',
+        arguments: {
+          sessionId: chessCreated.id,
+          from: 'e2',
+          to: 'e4',
+          reasoning: {
+            summary: 'Occupy the center with the king pawn.',
+            reasoningSteps: ['The central pawn advance gains space and opens lines for development.'],
+            confidence: 0.76,
+          },
+        },
+      }),
+    ) as {
+      state: { turn: string; lastMove: { san: string } }
+    }
+
+    expect(chessPlayed.state.turn).toBe('black')
+    expect(chessPlayed.state.lastMove.san).toBe('e4')
 
     const lastEventId = created.events.at(-1)?.id
     const waitPromise = client.callTool({

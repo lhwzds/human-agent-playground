@@ -1,5 +1,6 @@
 import type { GameCatalogItem } from '@human-agent-playground/core'
 
+import { chessGameAdapter } from './games/chess-adapter.js'
 import { connectFourGameAdapter } from './games/connect-four-adapter.js'
 import { gomokuGameAdapter } from './games/gomoku-adapter.js'
 import { othelloGameAdapter } from './games/othello-adapter.js'
@@ -15,6 +16,7 @@ export interface GameAdapter {
 
 const adapters: GameAdapter[] = [
   xiangqiGameAdapter,
+  chessGameAdapter,
   gomokuGameAdapter,
   connectFourGameAdapter,
   othelloGameAdapter,

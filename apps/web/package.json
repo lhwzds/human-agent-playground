@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "check": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && npm --prefix ../../games/gomoku run build && npm --prefix ../../games/connect-four run build && npm --prefix ../../games/othello run build && tsc -b",
+    "check": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && npm --prefix ../../games/gomoku run build && npm --prefix ../../games/connect-four run build && npm --prefix ../../games/othello run build && npm --prefix ../../games/chess run build && tsc -b",
     "preview": "vite preview",
     "start": "vite --host 127.0.0.1 --port 4173",
-    "test": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && npm --prefix ../../games/gomoku run build && npm --prefix ../../games/connect-four run build && npm --prefix ../../games/othello run build && vitest run"
+    "test": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && npm --prefix ../../games/gomoku run build && npm --prefix ../../games/connect-four run build && npm --prefix ../../games/othello run build && npm --prefix ../../games/chess run build && vitest run"
   },
   "dependencies": {
     "@human-agent-playground/core": "file:../../packages/core",
+    "@human-agent-playground/game-chess": "file:../../games/chess",
     "@human-agent-playground/game-connect-four": "file:../../games/connect-four",
     "@human-agent-playground/game-gomoku": "file:../../games/gomoku",
     "@human-agent-playground/game-othello": "file:../../games/othello",

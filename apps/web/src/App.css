@@ -770,6 +770,129 @@
   pointer-events: none;
 }
 
+.chess-board-shell {
+  padding: 20px;
+  background: linear-gradient(180deg, #7b5b3d 0%, #62442b 100%);
+}
+
+.chess-layout {
+  --chess-axis-gutter: 24px;
+  display: grid;
+  grid-template-columns: var(--chess-axis-gutter) minmax(0, 1fr);
+  grid-template-rows: var(--chess-axis-gutter) minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.chess-top-spacer {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.chess-file-labels {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(48px, 1fr));
+  align-items: center;
+  justify-items: center;
+}
+
+.chess-rank-labels {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-rows: repeat(8, minmax(48px, 1fr));
+  align-items: center;
+  justify-items: center;
+}
+
+.chess-grid {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(48px, 1fr));
+  grid-template-rows: repeat(8, minmax(48px, 1fr));
+  border: 2px solid rgba(60, 36, 21, 0.75);
+  overflow: hidden;
+}
+
+.chess-square {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.chess-square-light {
+  background: #f0d9b5;
+}
+
+.chess-square-dark {
+  background: #b58863;
+}
+
+.chess-square-selected::after,
+.chess-square-last-from::after,
+.chess-square-last-to::after {
+  content: '';
+  position: absolute;
+  inset: 10%;
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.chess-square-selected::after {
+  border: 2px solid rgba(135, 31, 31, 0.8);
+}
+
+.chess-square-last-from::after {
+  border: 2px solid rgba(180, 109, 24, 0.88);
+}
+
+.chess-square-last-to::after {
+  border: 2px solid rgba(34, 113, 70, 0.92);
+  box-shadow: 0 0 0 6px rgba(34, 113, 70, 0.18);
+}
+
+.chess-square-target::before {
+  content: '';
+  position: absolute;
+  inset: 34%;
+  border-radius: 50%;
+  background: rgba(24, 94, 52, 0.36);
+  pointer-events: none;
+}
+
+.chess-piece {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.chess-piece-white {
+  color: #fff7e9;
+  filter: drop-shadow(0 1px 1px rgba(42, 25, 14, 0.25));
+}
+
+.chess-piece-black {
+  color: #2e1d12;
+  filter: drop-shadow(0 1px 1px rgba(255, 245, 230, 0.18));
+}
+
+.chess-target-marker {
+  position: absolute;
+  inset: 38%;
+  border-radius: 50%;
+  background: rgba(24, 94, 52, 0.42);
+  pointer-events: none;
+}
+
 .side-panel {
   display: flex;
   min-height: 0;
@@ -1157,6 +1280,24 @@
   }
 
   .othello-grid {
+    grid-template-columns: repeat(8, minmax(28px, 1fr));
+    grid-template-rows: repeat(8, minmax(28px, 1fr));
+  }
+
+  .chess-layout {
+    --chess-axis-gutter: 18px;
+    gap: 6px;
+  }
+
+  .chess-file-labels {
+    grid-template-columns: repeat(8, minmax(28px, 1fr));
+  }
+
+  .chess-rank-labels {
+    grid-template-rows: repeat(8, minmax(28px, 1fr));
+  }
+
+  .chess-grid {
     grid-template-columns: repeat(8, minmax(28px, 1fr));
     grid-template-rows: repeat(8, minmax(28px, 1fr));
   }

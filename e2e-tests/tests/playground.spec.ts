@@ -271,6 +271,29 @@ test('switches the shared interface to Chinese', async ({ page }) => {
   await expect(page.getByText('已创建对局')).toBeVisible()
 })
 
+test('creates a Chess session and plays a legal opening move', async ({ page }) => {
+  const messageFeedCard = page.locator('.panel-card', {
+    has: page.getByRole('heading', { name: 'Message Feed' }),
+  })
+
+  await page.goto('/')
+  await page.locator('select').first().selectOption('chess')
+  await page.getByRole('button', { name: 'Create Session' }).click()
+
+  await expect(page.getByText('Game: Chess')).toBeVisible()
+  await expect(page.getByText('Turn: white')).toBeVisible()
+
+  await page.locator('[data-square="e2"]').click()
+  await expect(page.locator('[data-square="e4"]')).toHaveClass(/chess-square-target/)
+  await page.locator('[data-square="e4"]').click()
+
+  await expect(page.getByText('Turn: black')).toBeVisible()
+  await expect(messageFeedCard.getByText('e2 → e4')).toBeVisible()
+  await expect(messageFeedCard.getByText('SAN: e4')).toBeVisible()
+  await expect(page.locator('[data-square="e2"]')).toHaveClass(/chess-square-last-from/)
+  await expect(page.locator('[data-square="e4"]')).toHaveClass(/chess-square-last-to/)
+})
+
 test('creates a Gomoku session and reflects placed stones in real time', async ({ page, request }) => {
   const messageFeedCard = page.locator('.panel-card', {
     has: page.getByRole('heading', { name: 'Message Feed' }),

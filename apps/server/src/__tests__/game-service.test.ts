@@ -43,6 +43,7 @@ describe('GameService', () => {
 
     const games = await service.listGames()
     expect(games.map((game) => game.id)).toContain('xiangqi')
+    expect(games.map((game) => game.id)).toContain('chess')
     expect(games.map((game) => game.id)).toContain('gomoku')
     expect(games.map((game) => game.id)).toContain('connect-four')
     expect(games.map((game) => game.id)).toContain('othello')
@@ -77,6 +78,50 @@ describe('GameService', () => {
         details: expect.objectContaining({
           point: 'l8',
           stoneDisplay: '●',
+        }),
+      }),
+    )
+  })
+
+  it('supports Chess session creation, legal moves, and checkmate detection', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    const service = new GameService(join(directory, 'sessions.json'))
+
+    let session = await service.createSession({ gameId: 'chess' })
+    expect(session.state.turn).toBe('white')
+
+    const legalMoves = await service.getLegalMoves(session.id, { from: 'e2' })
+    expect(legalMoves).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ from: 'e2', to: 'e3' }),
+        expect.objectContaining({ from: 'e2', to: 'e4' }),
+      ]),
+    )
+
+    session = await service.playMove(session.id, { from: 'f2', to: 'f3' })
+    session = await service.playMove(session.id, { from: 'e7', to: 'e5' })
+    session = await service.playMove(session.id, { from: 'g2', to: 'g4' })
+    session = await service.playMove(session.id, { from: 'd8', to: 'h4' })
+
+    expect(session.state.status).toBe('finished')
+    expect(session.state.winner).toBe('black')
+    expect(session.state.isCheck).toBe(true)
+    expect(session.state.lastMove).toEqual(
+      expect.objectContaining({
+        from: 'd8',
+        to: 'h4',
+        side: 'black',
+        san: 'Qh4#',
+      }),
+    )
+    expect(session.events.at(-1)).toEqual(
+      expect.objectContaining({
+        kind: 'move_played',
+        details: expect.objectContaining({
+          from: 'd8',
+          to: 'h4',
+          san: 'Qh4#',
+          pieceDisplay: '♛',
         }),
       }),
     )
