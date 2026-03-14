@@ -116,6 +116,8 @@ Game-specific tool families:
 - In long-running shared play, prefer the matching `*_play_move_and_wait` tool over manually chaining `*_play_move` and `wait_for_turn`.
 - Treat one `*_play_move_and_wait` call as one full move cycle: your move, one opponent reply, then your turn again.
 - When `wait_for_turn` returns `ready`, stop waiting immediately, re-read the state, and decide one move now.
+- Use these waits as foreground blocking MCP calls. Do not wrap them in a detached terminal loop, background watcher, or shell polling script when the user explicitly asked for real-time blocking play.
+- If the host enforces a per-request MCP timeout, make it greater than the tool `timeoutMs`. For long local interactive play in this project, prefer `600000` ms on the client when the user wants up to ten minutes of waiting.
 
 ## Guardrails
 
@@ -131,10 +133,13 @@ Game-specific tool families:
 - IMPORTANT: when `wait_for_turn` returns `ready`, continue with MCP tool calls immediately.
 - NEVER send a chat reply before you have either played exactly one move or explicitly decided to stop.
 - NEVER treat `wait_for_turn` returning `ready` as permission to stop the current run.
+- NEVER open a detached terminal loop or background watcher just to keep waiting for the next turn when the user asked for real-time MCP blocking behavior.
+- IMPORTANT: `wait_for_turn` and every matching `*_play_move_and_wait` call should be used as a single foreground blocking MCP call.
 - IMPORTANT: when you want one tool call to cover both the move and the next wait, use the matching `*_play_move_and_wait`.
 - NEVER treat `*_play_move_and_wait` returning after the move is submitted as acceptable behavior; it must wait for the next cycle or a terminal result.
 - IMPORTANT: if the user asked for a complete game, start the next `*_play_move_and_wait` cycle immediately after every `ready` result.
 - NEVER stop after one successful cycle when the user explicitly asked for a full game.
+- IMPORTANT: when the user asks for a longer wait, raise both the tool `timeoutMs` and the MCP client request timeout together. For a ten-minute wait, use `600000` ms on the client and a matching or lower value in the tool call.
 
 ## Practical patterns
 
@@ -204,3 +209,4 @@ Use this pattern when the host can keep one task or one reply alive for repeated
 10. If the user asked for a complete game, keep repeating step 9 until the result becomes `finished`.
 11. Use `*_play_move` only if you intentionally want to split play and wait into separate MCP calls.
 12. NEVER answer in chat between step 4 and step 10.
+13. NEVER replace this foreground blocking pattern with a detached terminal loop or background watcher when the user explicitly asked for real-time MCP waiting.

@@ -154,8 +154,23 @@ describe('Streamable HTTP MCP server', () => {
     )
     expect(tools.tools.find((tool) => tool.name === 'wait_for_turn')?.description).toContain('IMPORTANT')
     expect(tools.tools.find((tool) => tool.name === 'wait_for_turn')?.description).toContain('NEVER')
+    expect(tools.tools.find((tool) => tool.name === 'wait_for_turn')?.description).toContain(
+      'foreground blocking MCP call',
+    )
+    expect(tools.tools.find((tool) => tool.name === 'wait_for_turn')?.description).toContain(
+      '600000 ms',
+    )
     expect(tools.tools.find((tool) => tool.name === 'xiangqi_play_move')?.description).toContain(
       'NEVER stop to send a chat reply before moving',
+    )
+    expect(tools.tools.find((tool) => tool.name === 'chess_play_move_and_wait')?.description).toContain(
+      'foreground blocking MCP call',
+    )
+    expect(tools.tools.find((tool) => tool.name === 'chess_play_move_and_wait')?.description).toContain(
+      '600000 ms',
+    )
+    expect(tools.tools.find((tool) => tool.name === 'chess_play_move_and_wait')?.description).toContain(
+      'detached terminal loop',
     )
     expect(tools.tools.find((tool) => tool.name === 'xiangqi_play_move_and_wait')?.description).toContain(
       'IMPORTANT',

@@ -107,7 +107,7 @@ export function createGomokuToolCatalog(service: GameService): ToolCatalogEntry[
       name: 'gomoku_play_move_and_wait',
       title: 'Play Gomoku Move And Wait',
       description:
-        'Play exactly one Gomoku move for the current side to move, then keep waiting inside the MCP server until the opponent completes exactly one reply and it is that same side’s turn again, the game finishes, or the timeout expires. Prefer this in long-running human-agent shared play because it keeps play and wait inside one MCP tool call. IMPORTANT: when this returns ready, re-read the state and call the next move tool immediately. If the user asked for a full game, keep repeating this cycle until the game finishes. NEVER treat the move submission as the end of the run.',
+        'Play exactly one Gomoku move for the current side to move, then keep waiting inside the MCP server until the opponent completes exactly one reply and it is that same side’s turn again, the game finishes, or the timeout expires. Prefer this in long-running human-agent shared play because it keeps play and wait inside one MCP tool call. Use it as one foreground blocking MCP call, not inside a detached terminal loop or background polling script. IMPORTANT: your MCP client request timeout must be greater than timeoutMs. For long local interactive play, prefer 600000 ms when you want up to ten minutes of waiting. IMPORTANT: when this returns ready, re-read the state and call the next move tool immediately. If the user asked for a full game, keep repeating this cycle until the game finishes. NEVER treat the move submission as the end of the run.',
       category: 'gameplay',
       gameId: 'gomoku',
       tags: ['gomoku', 'moves', 'play', 'wait', 'turn', 'write'],
@@ -118,7 +118,7 @@ export function createGomokuToolCatalog(service: GameService): ToolCatalogEntry[
           .number()
           .int()
           .min(1_000)
-          .max(300_000)
+          .max(600_000)
           .default(60_000)
           .describe('Maximum time to wait for this side to move again after the move is played'),
         reasoning: reasoningSchema.describe('Required reasoning summary shown in the shared timeline for this exact move'),
@@ -135,7 +135,7 @@ export function createGomokuToolCatalog(service: GameService): ToolCatalogEntry[
           .object({
             sessionId: z.string().uuid(),
             point: gomokuPointSchema,
-            timeoutMs: z.number().int().min(1_000).max(300_000).default(60_000),
+            timeoutMs: z.number().int().min(1_000).max(600_000).default(60_000),
             reasoning: reasoningSchema,
           })
           .parse(input)
@@ -154,7 +154,7 @@ export function createGomokuToolCatalog(service: GameService): ToolCatalogEntry[
         )
 
         return textResult(
-          'Played one Gomoku move and waited until the opponent replied and the turn came back. IMPORTANT: if the status is ready, re-read the state and call the next move tool immediately. If the user asked for a full game, repeat this cycle until the game finishes. NEVER send a chat reply before you either play the next move or decide to stop.',
+          'Played one Gomoku move and waited until the opponent replied and the turn came back. IMPORTANT: this tool is for one foreground blocking MCP call, not a detached background process. Your MCP client request timeout must be greater than timeoutMs; prefer 600000 ms for long local play. If the status is ready, re-read the state and call the next move tool immediately. If the user asked for a full game, repeat this cycle until the game finishes. NEVER send a chat reply before you either play the next move or decide to stop.',
           result,
         )
       },

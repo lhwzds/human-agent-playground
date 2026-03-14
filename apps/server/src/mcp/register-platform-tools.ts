@@ -145,7 +145,7 @@ export function createPlatformToolCatalog(
       name: 'wait_for_turn',
       title: 'Wait For Turn',
       description:
-        'Wait until a session advances and it becomes the expected side’s turn, or until the game finishes or the timeout expires. IMPORTANT: when this returns ready, do not send a chat reply first. NEVER answer the user before you continue with MCP tool calls. Stop waiting, re-read the latest state, and continue until you either play exactly one move or decide to stop.',
+        'Wait until a session advances and it becomes the expected side’s turn, or until the game finishes or the timeout expires. This tool is intended for one foreground blocking MCP call, not a detached terminal loop, background watcher, or shell polling script. IMPORTANT: your MCP client request timeout must be higher than timeoutMs. For long local shared play, prefer a client request timeout of 600000 ms when you want up to ten minutes of waiting. IMPORTANT: when this returns ready, do not send a chat reply first. NEVER answer the user before you continue with MCP tool calls. Stop waiting, re-read the latest state, and continue until you either play exactly one move or decide to stop.',
       category: 'session',
       tags: ['platform', 'sessions', 'wait', 'turn'],
       inputSchema: {
@@ -162,7 +162,7 @@ export function createPlatformToolCatalog(
           .number()
           .int()
           .min(1_000)
-          .max(300_000)
+          .max(600_000)
           .default(60_000)
           .describe('Maximum time to wait before returning timeout'),
       },
@@ -179,7 +179,7 @@ export function createPlatformToolCatalog(
             sessionId: z.string().uuid(),
             expectedTurn: z.string().min(1),
             afterEventId: z.string().min(1).optional(),
-            timeoutMs: z.number().int().min(1_000).max(300_000).default(60_000),
+            timeoutMs: z.number().int().min(1_000).max(600_000).default(60_000),
           })
           .parse(input)
 
@@ -189,7 +189,7 @@ export function createPlatformToolCatalog(
         })
 
         return textResult(
-          'Wait for turn result. IMPORTANT: if the status is ready, NEVER reply in chat yet. Fetch the current state now and continue with MCP tool calls until you have either played exactly one move or decided to stop.',
+          'Wait for turn result. IMPORTANT: this tool is for one foreground blocking MCP call, not a detached background process. If the status is ready, NEVER reply in chat yet. Fetch the current state now and continue with MCP tool calls until you have either played exactly one move or decided to stop. IMPORTANT: your MCP client request timeout must be greater than timeoutMs; prefer 600000 ms for long local shared-play waits.',
           result,
         )
       },
