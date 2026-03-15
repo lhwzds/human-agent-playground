@@ -123,42 +123,6 @@
   align-self: stretch;
 }
 
-.toolbar-session {
-  display: inline-grid;
-  gap: 4px;
-  justify-items: start;
-  align-self: start;
-  max-width: 100%;
-  padding: 8px 10px;
-  border-radius: 16px;
-  border: 1px solid rgba(74, 43, 26, 0.12);
-  background: rgba(255, 252, 246, 0.9);
-}
-
-.toolbar-session > span:first-child {
-  font-size: 12px;
-  font-weight: 600;
-  color: #755844;
-}
-
-.toolbar-session .mono {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.toolbar-session-placeholder .mono,
-.toolbar-session-placeholder > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
 .meta-strip {
   display: flex;
   flex-wrap: wrap;
@@ -1304,8 +1268,7 @@
 
   .toolbar-field,
   .toolbar-field select,
-  .toolbar-button,
-  .toolbar-session {
+  .toolbar-button {
     width: 100%;
   }
 

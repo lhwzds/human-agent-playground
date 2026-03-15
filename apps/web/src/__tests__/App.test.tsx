@@ -262,10 +262,95 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByText('Game: Gomoku')).toBeInTheDocument()
       expect(screen.getByText('Turn: black')).toBeInTheDocument()
-      expect(screen.getByText('Session')).toBeInTheDocument()
-      expect(screen.getByText('session-gmk-1')).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Session' })).toHaveValue('session-gmk-1')
       expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument()
+    })
+  })
+
+  it('boots into the most recently updated session and lets the user switch sessions', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'gomoku',
+        title: 'Gomoku',
+        shortName: 'Gomoku',
+        description: 'A 15x15 connection game where players race to make five in a row.',
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-gmk-old',
+        gameId: 'gomoku',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        events: [],
+        state: {
+          kind: 'gomoku',
+          turn: 'black',
+          status: 'active',
+          winner: null,
+          lastMove: null,
+          moveCount: 0,
+          winningLine: null,
+          board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+        },
+      },
+      {
+        id: 'session-gmk-new',
+        gameId: 'gomoku',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:05:00.000Z',
+        events: [],
+        state: {
+          kind: 'gomoku',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          lastMove: {
+            point: 'h8',
+            side: 'black',
+            stone: { side: 'black', display: '●' },
+            notation: 'h8',
+          },
+          moveCount: 1,
+          winningLine: null,
+          board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+        },
+      },
+    ])
+    vi.mocked(getSession).mockResolvedValue({
+      id: 'session-gmk-old',
+      gameId: 'gomoku',
+      createdAt: '2026-03-07T00:00:00.000Z',
+      updatedAt: '2026-03-07T00:06:00.000Z',
+      events: [],
+      state: {
+        kind: 'gomoku',
+        turn: 'black',
+        status: 'active',
+        winner: null,
+        lastMove: null,
+        moveCount: 0,
+        winningLine: null,
+        board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Turn: white')).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Session' })).toHaveValue('session-gmk-new')
+    })
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), {
+      target: { value: 'session-gmk-old' },
+    })
+
+    await waitFor(() => {
+      expect(getSession).toHaveBeenCalledWith('session-gmk-old')
+      expect(screen.getByText('Turn: black')).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Session' })).toHaveValue('session-gmk-old')
     })
   })
 
@@ -278,7 +363,7 @@ describe('App', () => {
         description: 'A 15x15 connection game where players race to make five in a row.',
       },
     ])
-    vi.mocked(listSessions).mockResolvedValue([
+    const sessionList = [
       {
         id: 'session-gmk-2',
         gameId: 'gomoku',
@@ -296,7 +381,10 @@ describe('App', () => {
           board: Array.from({ length: 15 }, () => Array.from({ length: 15 }, () => null)),
         },
       },
-    ])
+    ]
+    vi.mocked(listSessions)
+      .mockResolvedValueOnce(sessionList)
+      .mockResolvedValueOnce(sessionList)
     vi.mocked(getSession).mockResolvedValue({
       id: 'session-gmk-2',
       gameId: 'gomoku',
@@ -356,7 +444,7 @@ describe('App', () => {
     expect(primaryRow?.querySelector('select')).not.toBeNull()
     expect(primaryRow?.querySelectorAll('select')).toHaveLength(2)
     expect(primaryRow?.querySelector('.primary-button')).toBeNull()
-    expect(sessionRow?.querySelector('.toolbar-session')).not.toBeNull()
+    expect(sessionRow?.querySelector('select')).not.toBeNull()
     expect(sessionRow?.querySelector('.primary-button')).not.toBeNull()
     expect(toolbarActions?.querySelectorAll('button')).toHaveLength(2)
 

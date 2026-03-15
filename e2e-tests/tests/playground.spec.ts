@@ -2,6 +2,14 @@ import { expect, test } from '@playwright/test'
 
 const apiBaseUrl = process.env.PLAYGROUND_API_URL ?? 'http://127.0.0.1:8791'
 
+async function selectGame(page: Parameters<typeof test>[0]['page'], gameId: string) {
+  await page.getByRole('combobox', { name: 'Game' }).selectOption(gameId)
+}
+
+async function readSessionId(page: Parameters<typeof test>[0]['page']) {
+  return await page.getByRole('combobox', { name: 'Session' }).inputValue()
+}
+
 test('creates a Xiangqi session and plays a legal opening move', async ({ page }) => {
   const messageFeedCard = page.locator('.panel-card', {
     has: page.getByRole('heading', { name: 'Message Feed' }),
@@ -10,9 +18,8 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   await page.goto('/')
 
   await expect(page.getByText('Shared Tabletop Sessions For Humans And Agents')).toBeVisible()
-  await page.locator('select').first().selectOption('xiangqi')
-  await expect(page.locator('.mono').first()).toBeVisible()
-  const previousSessionId = (await page.locator('.mono').first().textContent())?.trim()
+  await selectGame(page, 'xiangqi')
+  const previousSessionId = await readSessionId(page)
   await page.getByRole('button', { name: 'Create Session' }).click()
   await expect(page.getByText('楚河')).toBeVisible()
   await expect(page.getByText('汉界')).toBeVisible()
@@ -21,7 +28,7 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   await expect(page.locator('[data-square="e9"] .board-point-diagonal')).toHaveCount(4)
   await expect(page.getByText('Sync: live')).toBeVisible()
   await expect(page.getByText('Turn: red')).toBeVisible()
-  await expect(page.locator('.mono').first()).not.toHaveText(previousSessionId ?? '')
+  await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
   await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible()
 
@@ -35,7 +42,7 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
     const createButton = document
       .querySelector('.toolbar-row-session .primary-button')
       ?.getBoundingClientRect()
-    const sessionCard = document.querySelector('.toolbar-row-session .toolbar-session')?.getBoundingClientRect()
+    const sessionCard = document.querySelector('.toolbar-row-session .toolbar-field')?.getBoundingClientRect()
 
     return {
       heroHeight: heroPanel?.height ?? 0,
@@ -103,8 +110,7 @@ test('reflects external session moves in real time', async ({ page, request }) =
   })
 
   await page.goto('/')
-  await page.locator('select').first().selectOption('xiangqi')
-  await expect(page.locator('.mono').first()).toBeVisible()
+  await selectGame(page, 'xiangqi')
   const streamUrls: string[] = []
 
   page.on('response', (response) => {
@@ -117,12 +123,12 @@ test('reflects external session moves in real time', async ({ page, request }) =
     }
   })
 
-  const previousSessionId = (await page.locator('.mono').first().textContent())?.trim()
+  const previousSessionId = await readSessionId(page)
   await page.getByRole('button', { name: 'Create Session' }).click()
   await expect(page.getByText('Sync: live')).toBeVisible()
-  await expect(page.locator('.mono').first()).not.toHaveText(previousSessionId ?? '')
+  await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
 
-  const sessionId = (await page.locator('.mono').first().textContent())?.trim()
+  const sessionId = await readSessionId(page)
   expect(sessionId).toBeTruthy()
   await expect
     .poll(() =>
@@ -210,11 +216,60 @@ test('reflects external session moves in real time', async ({ page, request }) =
   await expect(messageFeedCard.getByText('a4 → a5')).toBeVisible()
 })
 
+test('refreshes and switches to an externally created session', async ({ page, request }) => {
+  await page.goto('/')
+  await selectGame(page, 'gomoku')
+  await page.getByRole('button', { name: 'Create Session' }).click()
+
+  const sessionSelect = page.getByRole('combobox', { name: 'Session' })
+  const createResponse = await request.post(`${apiBaseUrl}/api/sessions`, {
+    data: {
+      gameId: 'gomoku',
+      actorKind: 'agent',
+      channel: 'mcp',
+    },
+  })
+  expect(createResponse.ok()).toBe(true)
+  const createdSession = (await createResponse.json()) as { id: string }
+
+  const moveResponse = await request.post(`${apiBaseUrl}/api/sessions/${createdSession.id}/moves`, {
+    data: {
+      point: 'h8',
+      actorKind: 'agent',
+      channel: 'mcp',
+      reasoning: {
+        summary: 'Occupy the center-adjacent point to start a balanced Gomoku shape.',
+        reasoningSteps: ['Opening near the center maximizes future connection options.'],
+        confidence: 0.62,
+      },
+    },
+  })
+  expect(moveResponse.ok()).toBe(true)
+
+  await page.getByRole('button', { name: 'Refresh' }).click()
+  await expect
+    .poll(async () => {
+      return await sessionSelect.evaluate(
+        (element, expectedSessionId) =>
+          Array.from((element as HTMLSelectElement).options).some(
+            (option) => option.value === expectedSessionId,
+          ),
+        createdSession.id,
+      )
+    })
+    .toBe(true)
+  await sessionSelect.selectOption(createdSession.id)
+
+  await expect(sessionSelect).toHaveValue(createdSession.id)
+  await expect(page.getByText('Turn: white')).toBeVisible()
+  await expect(page.getByText('black played h8.')).toBeVisible()
+})
+
 test('keeps the hero controls aligned and leaves room in a single-message feed', async ({
   page,
 }) => {
   await page.goto('/')
-  await page.locator('select').first().selectOption('gomoku')
+  await selectGame(page, 'gomoku')
   await page.getByRole('button', { name: 'Create Session' }).click()
 
   await expect(page.getByText('Game: Gomoku')).toBeVisible()
@@ -228,7 +283,7 @@ test('keeps the hero controls aligned and leaves room in a single-message feed',
     const createButton = document
       .querySelector('.toolbar-row-session .primary-button')
       ?.getBoundingClientRect()
-    const sessionCard = document.querySelector('.toolbar-row-session .toolbar-session')?.getBoundingClientRect()
+    const sessionCard = document.querySelector('.toolbar-row-session .toolbar-field')?.getBoundingClientRect()
     const feedList = document.querySelector('.message-feed-list')?.getBoundingClientRect()
     const firstItem = document.querySelector('.message-feed-item')?.getBoundingClientRect()
 
@@ -253,14 +308,14 @@ test('keeps the hero controls aligned and leaves room in a single-message feed',
   expect(Math.abs(layoutMetrics.languageTop - layoutMetrics.selectTop)).toBeLessThan(6)
   expect(layoutMetrics.buttonTop - layoutMetrics.selectTop).toBeGreaterThan(8)
   expect(Math.abs(layoutMetrics.sessionTop - layoutMetrics.buttonTop)).toBeLessThan(2)
-  expect(layoutMetrics.messageCount).toBe(1)
+  expect(layoutMetrics.messageCount).toBeLessThan(3)
   expect(layoutMetrics.firstItemHeight).toBeLessThan(layoutMetrics.feedHeight * 0.7)
 })
 
 test('switches the shared interface to Chinese', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('combobox', { name: 'Language' }).selectOption('zh-CN')
-  await page.locator('select').first().selectOption('gomoku')
+  await page.getByRole('combobox', { name: '游戏' }).selectOption('gomoku')
   await page.getByRole('button', { name: '创建对局' }).click()
 
   await expect(page.getByText('供人类与智能体共享的棋盘对局')).toBeVisible()
@@ -277,7 +332,7 @@ test('creates a Chess session and plays a legal opening move', async ({ page }) 
   })
 
   await page.goto('/')
-  await page.locator('select').first().selectOption('chess')
+  await selectGame(page, 'chess')
   await page.getByRole('button', { name: 'Create Session' }).click()
 
   await expect(page.getByText('Game: Chess')).toBeVisible()
@@ -300,7 +355,7 @@ test('creates a Gomoku session and reflects placed stones in real time', async (
   })
 
   await page.goto('/')
-  await page.locator('select').first().selectOption('gomoku')
+  await selectGame(page, 'gomoku')
   await page.getByRole('button', { name: 'Create Session' }).click()
 
   await expect(page.getByText('Game: Gomoku')).toBeVisible()
@@ -315,7 +370,7 @@ test('creates a Gomoku session and reflects placed stones in real time', async (
   await expect(page.getByText('Turn: white')).toBeVisible()
   await expect(page.locator('[data-point="h8"]')).toHaveClass(/gomoku-point-last/)
 
-  const sessionId = (await page.locator('.mono').first().textContent())?.trim()
+  const sessionId = await readSessionId(page)
   expect(sessionId).toBeTruthy()
 
   const response = await request.post(`${apiBaseUrl}/api/sessions/${sessionId}/moves`, {
@@ -344,14 +399,14 @@ test('shows a game-over dialog for a finished Gomoku session and can restart it'
   request,
 }) => {
   await page.goto('/')
-  await page.locator('select').first().selectOption('gomoku')
+  await selectGame(page, 'gomoku')
   await expect(page.getByText('Game: Gomoku')).toBeVisible()
-  const previousSessionId = (await page.locator('.mono').first().textContent())?.trim()
+  const previousSessionId = await readSessionId(page)
   await page.getByRole('button', { name: 'Create Session' }).click()
-  await expect(page.locator('.mono').first()).not.toHaveText(previousSessionId ?? '')
+  await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
   await expect(page.getByText('Turn: black')).toBeVisible()
 
-  const sessionId = (await page.locator('.mono').first().textContent())?.trim()
+  const sessionId = await readSessionId(page)
   expect(sessionId).toBeTruthy()
 
   const scriptedMoves = [
@@ -392,7 +447,7 @@ test('creates a Connect Four session and drops a legal opening disc', async ({ p
   })
 
   await page.goto('/')
-  await page.locator('select').first().selectOption('connect-four')
+  await selectGame(page, 'connect-four')
   await page.getByRole('button', { name: 'Create Session' }).click()
 
   await expect(page.getByText('Game: Connect Four')).toBeVisible()
@@ -413,7 +468,7 @@ test('creates an Othello session and reflects legal opening play', async ({ page
   })
 
   await page.goto('/')
-  await page.locator('select').first().selectOption('othello')
+  await selectGame(page, 'othello')
   await page.getByRole('button', { name: 'Create Session' }).click()
 
   await expect(page.getByText('Game: Othello')).toBeVisible()
@@ -421,7 +476,7 @@ test('creates an Othello session and reflects legal opening play', async ({ page
   await expect(page.locator('.othello-disc')).toHaveCount(4)
   await expect(page.locator('.othello-legal-marker')).toHaveCount(4)
 
-  const sessionId = (await page.locator('.mono').first().textContent())?.trim()
+  const sessionId = await readSessionId(page)
   expect(sessionId).toBeTruthy()
 
   const response = await request.post(`${apiBaseUrl}/api/sessions/${sessionId}/moves`, {

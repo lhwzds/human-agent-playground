@@ -22,15 +22,18 @@ import {
 
 interface BootstrapPayload {
   games: GameCatalogItem[]
+  sessions: GameSession[]
   session: GameSession
 }
 
 interface SessionSetupCardProps {
   games: GameCatalogItem[]
+  sessions: GameSession[]
   selectedGameId: string
-  sessionId?: string
+  selectedSessionId?: string
   onCreateSession: () => void
   onGameChange: (gameId: string) => void
+  onSessionChange?: (sessionId: string) => void
   onRefreshSession?: () => void
   onResetSession?: () => void
 }
@@ -39,11 +42,30 @@ type LiveSyncState = 'connecting' | 'live' | 'reconnecting' | 'offline'
 
 let bootstrapPromise: Promise<BootstrapPayload> | null = null
 
+function sortSessionsByUpdatedAt(sessions: GameSession[]) {
+  return [...sessions].sort(
+    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+  )
+}
+
+function formatSessionOption(session: GameSession) {
+  const shortId = session.id.slice(0, 8)
+  const moveCount =
+    typeof session.state === 'object' &&
+    session.state !== null &&
+    'moveCount' in session.state &&
+    typeof (session.state as { moveCount?: unknown }).moveCount === 'number'
+      ? (session.state as { moveCount: number }).moveCount
+      : 0
+
+  return `${shortId} · ${moveCount}`
+}
+
 function loadBootstrapPayload(): Promise<BootstrapPayload> {
   if (!bootstrapPromise) {
     bootstrapPromise = (async () => {
       const availableGames = await listGames()
-      const existing = await listSessions()
+      const existing = sortSessionsByUpdatedAt(await listSessions())
       const defaultGameId = availableGames[0]?.id ?? 'xiangqi'
       const session =
         existing[0] ??
@@ -53,6 +75,7 @@ function loadBootstrapPayload(): Promise<BootstrapPayload> {
 
       return {
         games: availableGames,
+        sessions: existing,
         session,
       }
     })()
@@ -79,14 +102,17 @@ function resolveGameModule(gameId: string | undefined) {
 
 function SessionSetupCard({
   games,
+  sessions,
   selectedGameId,
-  sessionId,
+  selectedSessionId,
   onCreateSession,
   onGameChange,
+  onSessionChange,
   onRefreshSession,
   onResetSession,
 }: SessionSetupCardProps) {
   const { language, setLanguage, t } = useI18n()
+  const filteredSessions = sessions.filter((session) => session.gameId === selectedGameId)
 
   return (
     <div className="hero-toolbar" role="toolbar" aria-label={t('toolbar.aria')}>
@@ -118,22 +144,29 @@ function SessionSetupCard({
         </label>
       </div>
       <div className="toolbar-row toolbar-row-session">
-        {sessionId ? (
-          <span className="toolbar-session">
-            <span>{t('toolbar.session')}</span>
-            <span className="mono">{sessionId}</span>
-          </span>
-        ) : (
-          <span className="toolbar-session toolbar-session-placeholder">
-            <span>{t('toolbar.session')}</span>
-            <span>{t('workspace.noSession')}</span>
-          </span>
-        )}
+        <label className="toolbar-field">
+          <span>{t('toolbar.session')}</span>
+          <select
+            aria-label={t('toolbar.session')}
+            value={selectedSessionId ?? ''}
+            onChange={(event) => onSessionChange?.(event.target.value)}
+            disabled={filteredSessions.length === 0 || !onSessionChange}
+          >
+            {filteredSessions.length === 0 ? (
+              <option value="">{t('toolbar.noSessions')}</option>
+            ) : null}
+            {filteredSessions.map((session) => (
+              <option key={session.id} value={session.id}>
+                {formatSessionOption(session)}
+              </option>
+            ))}
+          </select>
+        </label>
         <button className="primary-button toolbar-button" type="button" onClick={onCreateSession}>
           {t('toolbar.createSession')}
         </button>
       </div>
-      {sessionId && (onRefreshSession || onResetSession) ? (
+      {selectedSessionId && (onRefreshSession || onResetSession) ? (
         <div className="toolbar-row toolbar-row-actions">
           {onRefreshSession ? (
             <button
@@ -158,6 +191,7 @@ function SessionSetupCard({
 function AppContent() {
   const { language, t } = useI18n()
   const [games, setGames] = useState<GameCatalogItem[]>([])
+  const [sessions, setSessions] = useState<GameSession[]>([])
   const [session, setSession] = useState<GameSession | null>(null)
   const [selectedGameId, setSelectedGameId] = useState('xiangqi')
   const [syncState, setSyncState] = useState<LiveSyncState>('offline')
@@ -172,9 +206,11 @@ function AppContent() {
     async function bootstrap() {
       try {
         setLoading(true)
-        const { games: availableGames, session: active } = await loadBootstrapPayload()
+        const { games: availableGames, sessions: existingSessions, session: active } =
+          await loadBootstrapPayload()
         if (!cancelled) {
           setGames(availableGames)
+          setSessions(existingSessions)
           setSelectedGameId(active.gameId)
           setSession(active)
         }
@@ -202,7 +238,17 @@ function AppContent() {
       return
     }
 
-    const stream = openSessionStream(session.id, setSession, setSyncState)
+    const stream = openSessionStream(
+      session.id,
+      (nextSession) => {
+        setSession(nextSession)
+        setSessions((current) => {
+          const remaining = current.filter((candidate) => candidate.id !== nextSession.id)
+          return sortSessionsByUpdatedAt([nextSession, ...remaining])
+        })
+      },
+      setSyncState,
+    )
 
     return () => {
       stream.close()
@@ -210,8 +256,9 @@ function AppContent() {
   }, [session?.id])
 
   async function refreshSession(sessionId: string) {
-    const latest = await getSession(sessionId)
+    const [latest, latestSessions] = await Promise.all([getSession(sessionId), listSessions()])
     setSession(latest)
+    setSessions(sortSessionsByUpdatedAt(latestSessions))
     return latest
   }
 
@@ -221,6 +268,8 @@ function AppContent() {
       const nextSession = await createSession({
         gameId: selectedGameId,
       })
+      const latestSessions = sortSessionsByUpdatedAt(await listSessions())
+      setSessions(latestSessions)
       setSelectedGameId(nextSession.gameId)
       setSession(nextSession)
     } catch (nextError) {
@@ -249,9 +298,32 @@ function AppContent() {
     try {
       setError(null)
       const updated = await resetSession(session.id)
+      setSessions((current) => {
+        const remaining = current.filter((candidate) => candidate.id !== updated.id)
+        return sortSessionsByUpdatedAt([updated, ...remaining])
+      })
       setSession(updated)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Reset failed')
+    }
+  }
+
+  async function handleSessionChange(sessionId: string) {
+    if (!sessionId) {
+      return
+    }
+
+    try {
+      setError(null)
+      const nextSession = await getSession(sessionId)
+      setSelectedGameId(nextSession.gameId)
+      setSession(nextSession)
+      setSessions((current) => {
+        const remaining = current.filter((candidate) => candidate.id !== nextSession.id)
+        return sortSessionsByUpdatedAt([nextSession, ...remaining])
+      })
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Session switch failed')
     }
   }
 
@@ -369,10 +441,12 @@ function AppContent() {
           <div className="hero-controls">
             <SessionSetupCard
               games={games}
+              sessions={sessions}
               selectedGameId={selectedGameId}
-              sessionId={session?.id}
+              selectedSessionId={session?.id}
               onCreateSession={handleCreateSession}
               onGameChange={setSelectedGameId}
+              onSessionChange={handleSessionChange}
               onRefreshSession={handleRefreshSession}
               onResetSession={handleResetSession}
             />
