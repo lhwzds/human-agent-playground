@@ -1,0 +1,38 @@
+[workspace]
+members = [
+  "apps/backend",
+  "crates/hap-games",
+  "crates/hap-models",
+  "crates/hap-runtime",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+async-trait = "0.1.89"
+axum = { version = "0.8.4", features = ["macros"] }
+chrono = { version = "0.4.42", features = ["serde"] }
+futures = "0.3.31"
+json5 = "0.4.1"
+reqwest = { version = "0.12.24", features = ["json"] }
+rmcp = { version = "0.14.0", features = ["transport-streamable-http-server", "transport-streamable-http-client-reqwest"] }
+schemars = "1.0.4"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+shakmaty = "0.30.0"
+tokio = { version = "1.47.1", features = ["full"] }
+tokio-stream = { version = "0.1.17", features = ["sync"] }
+tokio-util = "0.7.16"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["fmt", "env-filter"] }
+tower-http = { version = "0.6.6", features = ["cors"] }
+uuid = { version = "1.18.1", features = ["v4", "serde"] }
+which = "8.0.0"
+
+restflow-core = { package = "restflow-core", git = "https://github.com/lhwzds/restflow.git", rev = "494b81f691a969d6f3f1ee76daea5bee0ffe9df7" }
+restflow-ai = { package = "restflow-ai", git = "https://github.com/lhwzds/restflow.git", rev = "494b81f691a969d6f3f1ee76daea5bee0ffe9df7" }
+restflow-storage = { package = "restflow-storage", git = "https://github.com/lhwzds/restflow.git", rev = "494b81f691a969d6f3f1ee76daea5bee0ffe9df7" }

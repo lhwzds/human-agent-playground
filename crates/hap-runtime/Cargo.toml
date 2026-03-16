@@ -1,0 +1,20 @@
+[package]
+name = "hap-runtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+hap-games = { path = "../hap-games" }
+hap-models = { path = "../hap-models" }
+json5.workspace = true
+restflow-ai.workspace = true
+restflow-core.workspace = true
+restflow-storage.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+which.workspace = true
