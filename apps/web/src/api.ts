@@ -1,11 +1,41 @@
 import type {
-  CreateSessionInput,
+  AiSeatConfig,
+  AiRuntimeSettings,
+  CreateAuthProfileInput,
   GameCatalogItem,
   GameSession,
+  ProviderCapability,
   SessionStreamEvent,
+  UpdateAiSeatInput,
+  UpdateAiSeatLauncherInput,
+  UpdateAuthProfileInput,
+  AuthProfileSummary,
+  CreateSessionInput,
 } from '@human-agent-playground/core'
 
 const baseUrl = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8787'
+
+export class RequestError extends Error {
+  readonly code?: string
+  readonly details?: Record<string, unknown>
+
+  constructor(
+    message: string,
+    code?: string,
+    details?: Record<string, unknown>,
+  ) {
+    super(message)
+    this.name = 'RequestError'
+    this.code = code
+    this.details = details
+  }
+}
+
+export interface AiRuntimeSettingsPayload {
+  settings: AiRuntimeSettings
+  providers: ProviderCapability[]
+  profiles: AuthProfileSummary[]
+}
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(new URL(path, baseUrl), {
@@ -17,8 +47,10 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(payload?.error ?? `Request failed: ${response.status}`)
+    const payload = (await response.json().catch(() => null)) as
+      | ({ error?: string; code?: string } & Record<string, unknown>)
+      | null
+    throw new RequestError(payload?.error ?? `Request failed: ${response.status}`, payload?.code, payload ?? undefined)
   }
 
   return (await response.json()) as T
@@ -48,6 +80,90 @@ export function createSession(input: Partial<CreateSessionInput> = {}): Promise<
 
 export function getSession(sessionId: string): Promise<GameSession> {
   return request(`/api/sessions/${sessionId}`)
+}
+
+export async function listProviders(): Promise<ProviderCapability[]> {
+  const response = await request<{ providers: ProviderCapability[] }>('/api/ai/providers')
+  return response.providers
+}
+
+export function getAiRuntimeSettings(): Promise<AiRuntimeSettingsPayload> {
+  return request('/api/ai/runtime-settings')
+}
+
+export async function saveAiRuntimeSettings(
+  settings: AiRuntimeSettings,
+): Promise<AiRuntimeSettings> {
+  const response = await request<{ settings: AiRuntimeSettings }>('/api/ai/runtime-settings', {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  })
+  return response.settings
+}
+
+export async function listAuthProfiles(): Promise<AuthProfileSummary[]> {
+  const response = await request<{ profiles: AuthProfileSummary[] }>('/api/ai/auth-profiles')
+  return response.profiles
+}
+
+export function createAuthProfile(
+  input: CreateAuthProfileInput,
+): Promise<{ id: string; created: true }> {
+  return request('/api/ai/auth-profiles', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateAuthProfile(
+  profileId: string,
+  input: UpdateAuthProfileInput,
+): Promise<{ id: string; name: string; enabled: boolean; priority: number }> {
+  return request(`/api/ai/auth-profiles/${profileId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
+export function deleteAuthProfile(profileId: string): Promise<{ deleted: true; id: string }> {
+  return request(`/api/ai/auth-profiles/${profileId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function testAuthProfile(
+  profileId: string,
+): Promise<{ id: string; available: boolean }> {
+  return request(`/api/ai/auth-profiles/${profileId}/test`, {
+    method: 'POST',
+  })
+}
+
+export async function getAiSeats(sessionId: string): Promise<Record<string, AiSeatConfig>> {
+  const response = await request<{ seats: Record<string, AiSeatConfig> }>(`/api/sessions/${sessionId}/ai-seats`)
+  return response.seats
+}
+
+export function updateAiSeat(
+  sessionId: string,
+  side: string,
+  input: UpdateAiSeatInput,
+): Promise<GameSession> {
+  return request(`/api/sessions/${sessionId}/ai-seats/${side}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateAiSeatLauncher(
+  sessionId: string,
+  side: string,
+  input: UpdateAiSeatLauncherInput,
+): Promise<GameSession> {
+  return request(`/api/sessions/${sessionId}/ai-seats/${side}/launcher`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
 }
 
 export function resetSession(sessionId: string): Promise<GameSession> {

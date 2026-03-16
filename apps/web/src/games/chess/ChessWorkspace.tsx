@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   formatActorLabel,
   formatEventHeadline,
+  formatRuntimeMeta,
   formatEventSummary,
   formatTimestamp,
   useI18n,
@@ -38,6 +39,7 @@ export function ChessWorkspace({
   onSessionUpdate,
   onError,
   gameOverDialog,
+  setupPanel,
 }: GameWorkspaceProps) {
   const { t } = useI18n()
   const session = toChessSession(rawSession)
@@ -160,13 +162,14 @@ export function ChessWorkspace({
       <aside className="side-panel" style={feedHeight ? { height: `${feedHeight}px` } : undefined}>
         <div className="panel-card panel-card-feed">
           <h2>{t('feed.title')}</h2>
-          {sessionEvents.length === 0 ? (
+          {sessionEvents.length === 0 && !setupPanel ? (
             <p>{t('feed.empty')}</p>
           ) : (
             <ol className="message-feed-list">
               {sessionEvents.map((event) => (
                 <MessageFeedItem key={event.id} event={event} gameId={session.gameId} />
               ))}
+              {setupPanel}
             </ol>
           )}
         </div>
@@ -178,6 +181,7 @@ export function ChessWorkspace({
 function MessageFeedItem({ event, gameId }: { event: SessionEvent; gameId: string }) {
   const { language } = useI18n()
   const moveDetails = event.kind === 'move_played' ? formatMoveDetails(language, event) : ''
+  const runtimeMeta = formatRuntimeMeta(language, event)
 
   return (
     <li className={`message-feed-item message-feed-item-${event.actorKind}`}>
@@ -188,6 +192,7 @@ function MessageFeedItem({ event, gameId }: { event: SessionEvent; gameId: strin
         <strong>{formatEventHeadline(language, event)}</strong>
         <p className="message-feed-summary">{formatEventSummary(language, event, gameId)}</p>
         {moveDetails ? <p className="message-feed-summary">{moveDetails}</p> : null}
+        {runtimeMeta ? <p className="message-feed-summary">{runtimeMeta}</p> : null}
         {event.reasoning ? <ReasoningSummary explanation={event.reasoning} compact /> : null}
       </article>
     </li>

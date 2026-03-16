@@ -1,18 +1,43 @@
-import type { GameCatalogItem, GameSession } from '@human-agent-playground/core'
+import type {
+  AiRuntimeProviderId,
+  AiRuntimeSettings,
+  AuthProfileSummary,
+  GameCatalogItem,
+  GameSession,
+  ProviderCapability,
+} from '@human-agent-playground/core'
 import { useEffect, useRef, useState } from 'react'
 
 import {
+  createAuthProfile,
   createSession,
+  getAiRuntimeSettings,
   getSession,
   listGames,
   listSessions,
   openSessionStream,
+  RequestError,
   resetSession,
+  saveAiRuntimeSettings,
+  testAuthProfile,
+  updateAiSeatLauncher,
+  updateAuthProfile,
 } from './api'
 import './App.css'
+import {
+  AiSettingsDialog,
+  SeatLauncherDialog,
+  createProviderSettingsDraft,
+  createSeatLauncherDraft,
+  mapLauncherToProviderSettingId,
+  type ProviderSettingsDraft,
+  type SeatLauncherDraft,
+} from './ai-runtime-ui'
 import { getGameModule } from './game-registry'
 import {
+  getAiSeatStatusLabel,
   getGameLabel,
+  getSideLabel,
   getStatusLabel,
   getSyncStateLabel,
   getWinnerLabel,
@@ -31,14 +56,42 @@ interface SessionSetupCardProps {
   sessions: GameSession[]
   selectedGameId: string
   selectedSessionId?: string
+  playerSummaries?: Array<{
+    side: string
+    launcherLabel: string
+    status: string
+    statusLabel: string
+    lastError: string | null
+    canRestart: boolean
+  }>
+  restartingSide?: string | null
   onCreateSession: () => void
   onGameChange: (gameId: string) => void
   onSessionChange?: (sessionId: string) => void
   onRefreshSession?: () => void
   onResetSession?: () => void
+  onOpenAiSettings?: () => void
+  onOpenEditPlayers?: () => void
+  onRestartAi?: (side: string) => void
 }
 
 type LiveSyncState = 'connecting' | 'live' | 'reconnecting' | 'offline'
+
+const runtimeProviderIds: AiRuntimeProviderId[] = [
+  'openai',
+  'anthropic',
+  'codex',
+  'claude_code',
+  'gemini',
+]
+
+const defaultSidesByGameId: Record<string, string[]> = {
+  xiangqi: ['red', 'black'],
+  chess: ['white', 'black'],
+  gomoku: ['black', 'white'],
+  othello: ['black', 'white'],
+  'connect-four': ['red', 'yellow'],
+}
 
 let bootstrapPromise: Promise<BootstrapPayload> | null = null
 
@@ -59,6 +112,32 @@ function formatSessionOption(session: GameSession) {
       : 0
 
   return `${shortId} · ${moveCount}`
+}
+
+function compareSessionFreshness(left: GameSession, right: GameSession) {
+  const leftTime = new Date(left.updatedAt).getTime()
+  const rightTime = new Date(right.updatedAt).getTime()
+
+  if (leftTime !== rightTime) {
+    return leftTime - rightTime
+  }
+
+  return left.events.length - right.events.length
+}
+
+function pickFresherSession(current: GameSession | null, nextSession: GameSession) {
+  if (!current || current.id !== nextSession.id) {
+    return nextSession
+  }
+
+  return compareSessionFreshness(nextSession, current) >= 0 ? nextSession : current
+}
+
+function upsertSessionCollection(current: GameSession[], nextSession: GameSession) {
+  const existing = current.find((candidate) => candidate.id === nextSession.id)
+  const merged = existing ? pickFresherSession(existing, nextSession) : nextSession
+  const remaining = current.filter((candidate) => candidate.id !== nextSession.id)
+  return sortSessionsByUpdatedAt([merged, ...remaining])
 }
 
 function loadBootstrapPayload(): Promise<BootstrapPayload> {
@@ -100,16 +179,233 @@ function resolveGameModule(gameId: string | undefined) {
   }
 }
 
+function normalizeOptionalText(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? ''
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function buildProviderDraftMap(
+  settings: AiRuntimeSettings,
+  providers: ProviderCapability[],
+): Record<AiRuntimeProviderId, ProviderSettingsDraft> {
+  const drafts = {} as Record<AiRuntimeProviderId, ProviderSettingsDraft>
+
+  for (const providerId of runtimeProviderIds) {
+    drafts[providerId] = createProviderSettingsDraft(providerId, settings, providers)
+  }
+
+  return drafts
+}
+
+function buildSeatLauncherDraftMap(
+  session: GameSession | null,
+  game: GameCatalogItem | undefined,
+  providers: ProviderCapability[],
+  settings: AiRuntimeSettings,
+  current: Record<string, SeatLauncherDraft>,
+) {
+  if (!session) {
+    return {}
+  }
+
+  const sides = resolveGameSides(game, session)
+
+  const nextDrafts: Record<string, SeatLauncherDraft> = {}
+
+  for (const side of sides) {
+    nextDrafts[side] = {
+      ...createSeatLauncherDraft(session.aiSeats?.[side], providers, settings),
+      advancedOpen: current[side]?.advancedOpen ?? false,
+    }
+  }
+
+  return nextDrafts
+}
+
+function resolveGameSides(game: GameCatalogItem | undefined, session?: GameSession | null) {
+  if (Array.isArray(game?.sides) && game.sides.length > 0) {
+    return game.sides
+  }
+
+  if (game?.id && defaultSidesByGameId[game.id]) {
+    return defaultSidesByGameId[game.id]
+  }
+
+  const sessionSides = Object.keys(session?.aiSeats ?? {})
+  if (sessionSides.length > 0) {
+    return sessionSides
+  }
+
+  return []
+}
+
+function buildSeatLauncherDraftMapForSides(
+  sides: string[],
+  providers: ProviderCapability[],
+  settings: AiRuntimeSettings,
+  current: Record<string, SeatLauncherDraft> = {},
+) {
+  const nextDrafts: Record<string, SeatLauncherDraft> = {}
+
+  for (const side of sides) {
+    nextDrafts[side] = {
+      ...createSeatLauncherDraft(undefined, providers, settings),
+      ...current[side],
+      launcher: current[side]?.launcher ?? 'human',
+      model:
+        current[side]?.launcher && current[side].launcher !== 'human'
+          ? current[side]?.model ?? ''
+          : '',
+      autoPlay:
+        current[side]?.launcher && current[side].launcher !== 'human'
+          ? current[side]?.autoPlay ?? true
+          : false,
+    }
+  }
+
+  return nextDrafts
+}
+
+function buildSeatLauncherCreateInput(draft: SeatLauncherDraft) {
+  if (draft.launcher === 'human') {
+    return {
+      launcher: 'human' as const,
+    }
+  }
+
+  return {
+    launcher: draft.launcher,
+    model: draft.model || undefined,
+    autoPlay: draft.autoPlay,
+  }
+}
+
+function resolveProviderIdFromRequestError(error: RequestError | null) {
+  const providerId = typeof error?.details?.providerId === 'string' ? error.details.providerId : null
+
+  switch (providerId) {
+    case 'openai':
+    case 'anthropic':
+    case 'codex':
+    case 'claude_code':
+    case 'gemini':
+      return providerId
+    case 'codex-cli':
+      return 'codex'
+    case 'claude-code':
+      return 'claude_code'
+    case 'google':
+    case 'gemini-cli':
+      return 'gemini'
+    default:
+      return null
+  }
+}
+
+function resolveSettingsProvider(
+  settings: AiRuntimeSettings,
+  providerId: AiRuntimeProviderId,
+) {
+  return settings.providers.find((provider) => provider.providerId === providerId)
+}
+
+function getRuntimeProviderLabel(
+  t: ReturnType<typeof useI18n>['t'],
+  providerId: AiRuntimeProviderId,
+) {
+  switch (providerId) {
+    case 'openai':
+      return t('ai.authProvider.openai')
+    case 'anthropic':
+      return t('ai.authProvider.anthropic')
+    case 'codex':
+      return t('ai.authProvider.openai_codex')
+    case 'claude_code':
+      return t('ai.authProvider.claude_code')
+    case 'gemini':
+      return 'Gemini'
+  }
+}
+
+function getLauncherDisplayLabel(
+  t: ReturnType<typeof useI18n>['t'],
+  launcher: 'human' | 'codex' | 'claude_code' | 'openai' | 'anthropic' | 'gemini',
+) {
+  switch (launcher) {
+    case 'human':
+      return t('actor.human')
+    case 'codex':
+      return t('ai.authProvider.openai_codex')
+    case 'claude_code':
+      return t('ai.authProvider.claude_code')
+    case 'openai':
+      return t('ai.authProvider.openai')
+    case 'anthropic':
+      return t('ai.authProvider.anthropic')
+    case 'gemini':
+      return 'Gemini'
+  }
+}
+
+function resolveProviderProfileId(
+  providerId: AiRuntimeProviderId,
+  draft: ProviderSettingsDraft,
+) {
+  if (providerId === 'openai' || providerId === 'anthropic') {
+    return providerId
+  }
+
+  if (providerId === 'gemini' && draft.preferredSource !== 'cli') {
+    return 'google'
+  }
+
+  return null
+}
+
+function providerNeedsCredential(
+  providerId: AiRuntimeProviderId,
+  draft: ProviderSettingsDraft,
+) {
+  return resolveProviderProfileId(providerId, draft) !== null
+}
+
+function buildNextRuntimeSettings(
+  settings: AiRuntimeSettings,
+  providerId: AiRuntimeProviderId,
+  draft: ProviderSettingsDraft,
+  defaultProfileId: string | null,
+) {
+  return {
+    providers: settings.providers.map((provider) =>
+      provider.providerId === providerId
+        ? {
+            ...provider,
+            displayName: normalizeOptionalText(draft.displayName),
+            defaultModel: normalizeOptionalText(draft.defaultModel),
+            defaultProfileId,
+            preferredSource:
+              providerId === 'gemini' ? draft.preferredSource : provider.preferredSource ?? null,
+          }
+        : provider,
+    ),
+  } satisfies AiRuntimeSettings
+}
+
 function SessionSetupCard({
   games,
   sessions,
   selectedGameId,
   selectedSessionId,
+  playerSummaries,
+  restartingSide,
   onCreateSession,
   onGameChange,
   onSessionChange,
   onRefreshSession,
   onResetSession,
+  onOpenAiSettings,
+  onOpenEditPlayers,
+  onRestartAi,
 }: SessionSetupCardProps) {
   const { language, setLanguage, t } = useI18n()
   const filteredSessions = sessions.filter((session) => session.gameId === selectedGameId)
@@ -138,8 +434,8 @@ function SessionSetupCard({
             value={language}
             onChange={(event) => setLanguage(event.target.value as 'en' | 'zh-CN')}
           >
-            <option value="en">EN</option>
-            <option value="zh-CN">中文</option>
+            <option value="en">{t('toolbar.language.en')}</option>
+            <option value="zh-CN">{t('toolbar.language.zh-CN')}</option>
           </select>
         </label>
       </div>
@@ -166,9 +462,52 @@ function SessionSetupCard({
           {t('toolbar.createSession')}
         </button>
       </div>
-      {selectedSessionId && (onRefreshSession || onResetSession) ? (
+      {playerSummaries && playerSummaries.length > 0 ? (
+        <div className="toolbar-row toolbar-row-players">
+          <div className="toolbar-player-summary" aria-label={t('players.title')}>
+            {playerSummaries.map((item) => (
+              <span key={item.side} className="toolbar-player-chip-shell">
+                <span
+                  className={`toolbar-player-chip is-${item.status}`}
+                  title={item.lastError ?? undefined}
+                >
+                  <span className="toolbar-player-chip-content">
+                    <strong>{getSideLabel(language, item.side)}</strong>
+                    <span>{item.launcherLabel}</span>
+                  </span>
+                  <span className={`toolbar-player-chip-status status-${item.status}`}>
+                    <span className="toolbar-player-chip-status-dot" aria-hidden="true" />
+                    <span>{item.statusLabel}</span>
+                  </span>
+                </span>
+                {item.canRestart && onRestartAi ? (
+                  <button
+                    className="secondary-button toolbar-restart-button"
+                    type="button"
+                    onClick={() => onRestartAi(item.side)}
+                    disabled={restartingSide === item.side}
+                  >
+                    {restartingSide === item.side ? t('ai.restarting') : t('ai.restart')}
+                  </button>
+                ) : null}
+              </span>
+            ))}
+          </div>
+          {onOpenEditPlayers ? (
+            <button className="secondary-button toolbar-button" type="button" onClick={onOpenEditPlayers}>
+              {t('players.edit')}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {onOpenAiSettings || onRefreshSession || onResetSession ? (
         <div className="toolbar-row toolbar-row-actions">
-          {onRefreshSession ? (
+          {onOpenAiSettings ? (
+            <button className="secondary-button toolbar-button" type="button" onClick={onOpenAiSettings}>
+              {t('toolbar.aiSettings')}
+            </button>
+          ) : null}
+          {selectedSessionId && onRefreshSession ? (
             <button
               className="secondary-button toolbar-button"
               type="button"
@@ -177,7 +516,7 @@ function SessionSetupCard({
               {t('toolbar.refresh')}
             </button>
           ) : null}
-          {onResetSession ? (
+          {selectedSessionId && onResetSession ? (
             <button className="secondary-button toolbar-button" type="button" onClick={onResetSession}>
               {t('toolbar.reset')}
             </button>
@@ -193,12 +532,62 @@ function AppContent() {
   const [games, setGames] = useState<GameCatalogItem[]>([])
   const [sessions, setSessions] = useState<GameSession[]>([])
   const [session, setSession] = useState<GameSession | null>(null)
+  const [providers, setProviders] = useState<ProviderCapability[]>([])
+  const [profiles, setProfiles] = useState<AuthProfileSummary[]>([])
+  const [runtimeSettings, setRuntimeSettings] = useState<AiRuntimeSettings>({ providers: [] })
+  const [providerDrafts, setProviderDrafts] = useState<
+    Record<AiRuntimeProviderId, ProviderSettingsDraft>
+  >(() =>
+    buildProviderDraftMap({ providers: [] }, []),
+  )
+  const [editSeatLauncherDrafts, setEditSeatLauncherDrafts] = useState<
+    Record<string, SeatLauncherDraft>
+  >({})
+  const [createSeatLauncherDrafts, setCreateSeatLauncherDrafts] = useState<
+    Record<string, SeatLauncherDraft>
+  >({})
   const [selectedGameId, setSelectedGameId] = useState('xiangqi')
   const [syncState, setSyncState] = useState<LiveSyncState>('offline')
   const [error, setError] = useState<string | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [playerDialogError, setPlayerDialogError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [aiLoading, setAiLoading] = useState(true)
+  const [providerBusyId, setProviderBusyId] = useState<string | null>(null)
+  const [playersBusy, setPlayersBusy] = useState(false)
+  const [restartingSide, setRestartingSide] = useState<string | null>(null)
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false)
+  const [createSessionOpen, setCreateSessionOpen] = useState(false)
+  const [editPlayersOpen, setEditPlayersOpen] = useState(false)
+  const [focusedRuntimeProviderId, setFocusedRuntimeProviderId] =
+    useState<AiRuntimeProviderId | null>(null)
+  const [aiNotice, setAiNotice] = useState<string | null>(null)
   const [activeGameOverSessionKey, setActiveGameOverSessionKey] = useState<string | null>(null)
   const previousStatusBySessionRef = useRef<Map<string, string>>(new Map())
+
+  const activeGame = games.find((game) => game.id === (session?.gameId ?? selectedGameId))
+
+  function applySessionSnapshot(nextSession: GameSession) {
+    setSession((current) => pickFresherSession(current, nextSession))
+    setSessions((current) => upsertSessionCollection(current, nextSession))
+  }
+
+  async function loadAiRuntime() {
+    setAiLoading(true)
+
+    try {
+      const payload = await getAiRuntimeSettings()
+      setProviders(payload.providers)
+      setProfiles(payload.profiles)
+      setRuntimeSettings(payload.settings)
+      setProviderDrafts(buildProviderDraftMap(payload.settings, payload.providers))
+      setAiError(null)
+    } catch (nextError) {
+      setAiError(nextError instanceof Error ? nextError.message : 'Failed to load AI runtime')
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -233,6 +622,10 @@ function AppContent() {
   }, [])
 
   useEffect(() => {
+    void loadAiRuntime()
+  }, [])
+
+  useEffect(() => {
     if (!session) {
       setSyncState('offline')
       return
@@ -241,11 +634,7 @@ function AppContent() {
     const stream = openSessionStream(
       session.id,
       (nextSession) => {
-        setSession(nextSession)
-        setSessions((current) => {
-          const remaining = current.filter((candidate) => candidate.id !== nextSession.id)
-          return sortSessionsByUpdatedAt([nextSession, ...remaining])
-        })
+        applySessionSnapshot(nextSession)
       },
       setSyncState,
     )
@@ -255,25 +644,136 @@ function AppContent() {
     }
   }, [session?.id])
 
+  useEffect(() => {
+    setEditSeatLauncherDrafts((current) =>
+      buildSeatLauncherDraftMap(session, activeGame, providers, runtimeSettings, current),
+    )
+  }, [session?.id, session?.updatedAt, activeGame?.id, providers, runtimeSettings])
+
+  useEffect(() => {
+    if (!createSessionOpen) {
+      return
+    }
+
+    const selectedGame = games.find((candidate) => candidate.id === selectedGameId)
+    if (!selectedGame) {
+      setCreateSeatLauncherDrafts({})
+      return
+    }
+
+    const sides = resolveGameSides(selectedGame)
+
+    setCreateSeatLauncherDrafts((current) =>
+      buildSeatLauncherDraftMapForSides(
+        sides,
+        providers,
+        runtimeSettings,
+        current,
+      ),
+    )
+  }, [createSessionOpen, games, providers, runtimeSettings, selectedGameId])
+
   async function refreshSession(sessionId: string) {
     const [latest, latestSessions] = await Promise.all([getSession(sessionId), listSessions()])
-    setSession(latest)
-    setSessions(sortSessionsByUpdatedAt(latestSessions))
+    applySessionSnapshot(latest)
+    setSessions((current) => {
+      let merged = [...current]
+      for (const candidate of latestSessions) {
+        merged = upsertSessionCollection(merged, candidate)
+      }
+      return sortSessionsByUpdatedAt(merged)
+    })
     return latest
   }
 
+  function openAiSettingsForLauncherError(
+    nextError: unknown,
+    side: string,
+    drafts: Record<string, SeatLauncherDraft>,
+  ) {
+    const requestError =
+      nextError instanceof RequestError
+        ? nextError
+        : typeof nextError === 'object' && nextError !== null && 'code' in nextError
+          ? (nextError as RequestError)
+          : null
+
+    if (!requestError || !['config_missing', 'cli_unavailable', 'test_failed'].includes(requestError.code ?? '')) {
+      return
+    }
+
+    const draft = drafts[side]
+    const providerId =
+      resolveProviderIdFromRequestError(requestError) ??
+      (draft ? mapLauncherToProviderSettingId(draft.launcher) : null)
+
+    if (!providerId) {
+      return
+    }
+
+    setFocusedRuntimeProviderId(providerId)
+    setAiSettingsOpen(true)
+  }
+
+  function handleOpenCreateSession() {
+    const selectedGame = games.find((candidate) => candidate.id === selectedGameId)
+    setPlayerDialogError(null)
+    setCreateSeatLauncherDrafts(
+      selectedGame
+        ? buildSeatLauncherDraftMapForSides(resolveGameSides(selectedGame), providers, runtimeSettings)
+        : {},
+    )
+    setCreateSessionOpen(true)
+  }
+
   async function handleCreateSession() {
+    const selectedGame = games.find((candidate) => candidate.id === selectedGameId)
+    if (!selectedGame) {
+      return
+    }
+
     try {
+      setPlayersBusy(true)
       setError(null)
+      setPlayerDialogError(null)
+      const sides = resolveGameSides(selectedGame)
+      const seatLaunchers = Object.fromEntries(
+        sides.map((side) => [
+          side,
+          buildSeatLauncherCreateInput(
+            createSeatLauncherDrafts[side] ??
+              createSeatLauncherDraft(undefined, providers, runtimeSettings),
+          ),
+        ]),
+      )
       const nextSession = await createSession({
-        gameId: selectedGameId,
+        gameId: selectedGame.id,
+        seatLaunchers,
       })
       const latestSessions = sortSessionsByUpdatedAt(await listSessions())
-      setSessions(latestSessions)
       setSelectedGameId(nextSession.gameId)
-      setSession(nextSession)
+      applySessionSnapshot(nextSession)
+      setSessions((current) => {
+        let merged = [...current]
+        for (const candidate of latestSessions) {
+          merged = upsertSessionCollection(merged, candidate)
+        }
+        return sortSessionsByUpdatedAt(merged)
+      })
+      setCreateSessionOpen(false)
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Session creation failed')
+      setPlayerDialogError(
+        nextError instanceof Error ? nextError.message : 'Session creation failed',
+      )
+
+      const failingSide = resolveGameSides(selectedGame).find(
+        (side) => (createSeatLauncherDrafts[side]?.launcher ?? 'human') !== 'human',
+      )
+      if (failingSide) {
+        openAiSettingsForLauncherError(nextError, failingSide, createSeatLauncherDrafts)
+      }
+    } finally {
+      setPlayersBusy(false)
     }
   }
 
@@ -298,11 +798,7 @@ function AppContent() {
     try {
       setError(null)
       const updated = await resetSession(session.id)
-      setSessions((current) => {
-        const remaining = current.filter((candidate) => candidate.id !== updated.id)
-        return sortSessionsByUpdatedAt([updated, ...remaining])
-      })
-      setSession(updated)
+      applySessionSnapshot(updated)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Reset failed')
     }
@@ -317,17 +813,240 @@ function AppContent() {
       setError(null)
       const nextSession = await getSession(sessionId)
       setSelectedGameId(nextSession.gameId)
-      setSession(nextSession)
-      setSessions((current) => {
-        const remaining = current.filter((candidate) => candidate.id !== nextSession.id)
-        return sortSessionsByUpdatedAt([nextSession, ...remaining])
-      })
+      applySessionSnapshot(nextSession)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Session switch failed')
     }
   }
 
-  const activeGame = games.find((game) => game.id === (session?.gameId ?? selectedGameId))
+  function handleProviderDraftChange(
+    providerId: AiRuntimeProviderId,
+    patch: Partial<ProviderSettingsDraft>,
+  ) {
+    setAiNotice(null)
+    setProviderDrafts((current) => ({
+      ...current,
+      [providerId]: {
+        ...current[providerId],
+        ...patch,
+      },
+    }))
+  }
+
+  async function handleSaveProviderSettings(providerId: AiRuntimeProviderId) {
+    const draft = providerDrafts[providerId]
+    const currentSetting = resolveSettingsProvider(runtimeSettings, providerId)
+
+    if (!draft || !currentSetting) {
+      return
+    }
+
+    try {
+      setProviderBusyId(providerId)
+
+      let defaultProfileId = currentSetting.defaultProfileId
+      if (providerNeedsCredential(providerId, draft)) {
+        const providerKey = resolveProviderProfileId(providerId, draft)
+        if (!providerKey) {
+          throw new RequestError('This provider requires a supported profile type.', 'config_missing', {
+            providerId,
+          })
+        }
+
+        const credentialValue = normalizeOptionalText(draft.credentialValue)
+        if (credentialValue) {
+          const result = await createAuthProfile({
+            name: normalizeOptionalText(draft.displayName) ?? `${providerId} default`,
+            provider: providerKey,
+            credentialType: draft.credentialType,
+            credentialValue,
+            email: normalizeOptionalText(draft.email) ?? undefined,
+          })
+          defaultProfileId = result.id
+        } else if (defaultProfileId) {
+          await updateAuthProfile(defaultProfileId, {
+            name: normalizeOptionalText(draft.displayName) ?? undefined,
+            enabled: true,
+            credentialType: draft.credentialType,
+            email: normalizeOptionalText(draft.email),
+          })
+        } else {
+          throw new RequestError('No credential configured for this provider.', 'config_missing', {
+            providerId,
+          })
+        }
+      } else {
+        defaultProfileId = providerId === 'gemini' ? currentSetting.defaultProfileId : null
+      }
+
+      const nextSettings = buildNextRuntimeSettings(
+        runtimeSettings,
+        providerId,
+        draft,
+        defaultProfileId ?? null,
+      )
+
+      await saveAiRuntimeSettings(nextSettings)
+      await loadAiRuntime()
+      setAiError(null)
+      setAiNotice(t('ai.notice.saved', { provider: getRuntimeProviderLabel(t, providerId) }))
+    } catch (nextError) {
+      setAiNotice(null)
+      setAiError(
+        nextError instanceof Error ? nextError.message : 'Failed to save AI provider settings',
+      )
+    } finally {
+      setProviderBusyId(null)
+    }
+  }
+
+  async function handleTestProvider(providerId: AiRuntimeProviderId) {
+    const draft = providerDrafts[providerId]
+    const setting = resolveSettingsProvider(runtimeSettings, providerId)
+    if (!draft || !setting) {
+      return
+    }
+
+    try {
+      setProviderBusyId(providerId)
+
+      if (providerNeedsCredential(providerId, draft)) {
+        if (!setting.defaultProfileId) {
+          throw new RequestError('No saved connection exists for this provider.', 'config_missing', {
+            providerId,
+          })
+        }
+
+        const result = await testAuthProfile(setting.defaultProfileId)
+        if (result.available) {
+          setAiError(null)
+          setAiNotice(t('ai.notice.testReady', { provider: getRuntimeProviderLabel(t, providerId) }))
+        } else {
+          setAiNotice(null)
+          setAiError(`${providerId} is currently unavailable.`)
+        }
+        return
+      }
+
+      const capabilityId =
+        providerId === 'codex'
+          ? 'codex-cli'
+          : providerId === 'claude_code'
+            ? 'claude-code'
+            : providerId === 'gemini'
+              ? 'gemini-cli'
+              : providerId
+
+      const capability = providers.find((provider) => provider.id === capabilityId)
+      if (!capability?.available) {
+        throw new RequestError(`${providerId} is unavailable on this machine.`, 'cli_unavailable', {
+          providerId,
+        })
+      }
+
+      setAiError(null)
+      setAiNotice(t('ai.notice.testReady', { provider: getRuntimeProviderLabel(t, providerId) }))
+    } catch (nextError) {
+      setAiNotice(null)
+      setAiError(
+        nextError instanceof Error ? nextError.message : 'Failed to test AI provider settings',
+      )
+    } finally {
+      setProviderBusyId(null)
+    }
+  }
+
+  function handleEditSeatLauncherDraftChange(side: string, patch: Partial<SeatLauncherDraft>) {
+    setEditSeatLauncherDrafts((current) => ({
+      ...current,
+      [side]: {
+        ...createSeatLauncherDraft(session?.aiSeats?.[side], providers, runtimeSettings),
+        ...current[side],
+        ...patch,
+      },
+    }))
+  }
+
+  function handleCreateSeatLauncherDraftChange(side: string, patch: Partial<SeatLauncherDraft>) {
+    setCreateSeatLauncherDrafts((current) => ({
+      ...current,
+      [side]: {
+        ...createSeatLauncherDraft(undefined, providers, runtimeSettings),
+        ...current[side],
+        ...patch,
+      },
+    }))
+  }
+
+  async function handleSavePlayers() {
+    if (!session || !activeGame) {
+      return
+    }
+
+    try {
+      setPlayersBusy(true)
+      setPlayerDialogError(null)
+      const sides = resolveGameSides(activeGame, session)
+
+      let updated = session
+      for (const side of sides) {
+        const draft =
+          editSeatLauncherDrafts[side] ??
+          createSeatLauncherDraft(session.aiSeats?.[side], providers, runtimeSettings)
+        updated = await updateAiSeatLauncher(session.id, side, {
+          launcher: draft.launcher,
+          model: draft.launcher === 'human' ? undefined : draft.model || undefined,
+          autoPlay: draft.launcher === 'human' ? undefined : draft.autoPlay,
+        })
+        applySessionSnapshot(updated)
+      }
+
+      setEditPlayersOpen(false)
+      setAiError(null)
+    } catch (nextError) {
+      setPlayerDialogError(
+        nextError instanceof Error ? nextError.message : 'Failed to save player setup',
+      )
+      const failingSide = resolveGameSides(activeGame, session).find(
+        (side) => (editSeatLauncherDrafts[side]?.launcher ?? 'human') !== 'human',
+      )
+      if (failingSide) {
+        openAiSettingsForLauncherError(nextError, failingSide, editSeatLauncherDrafts)
+      }
+    } finally {
+      setPlayersBusy(false)
+    }
+  }
+
+  async function handleRestartAi(side: string) {
+    if (!session) {
+      return
+    }
+
+    const seat = session.aiSeats?.[side]
+    if (!seat?.enabled || seat.launcher === 'human') {
+      return
+    }
+
+    try {
+      setRestartingSide(side)
+      setAiError(null)
+      const updated = await updateAiSeatLauncher(session.id, side, {
+        launcher: seat.launcher,
+        model: seat.model || undefined,
+        autoPlay: seat.autoPlay,
+      })
+      applySessionSnapshot(updated)
+    } catch (nextError) {
+      setAiError(nextError instanceof Error ? nextError.message : 'Failed to restart AI seat')
+      openAiSettingsForLauncherError(nextError, side, {
+        [side]: createSeatLauncherDraft(seat, providers, runtimeSettings),
+      })
+    } finally {
+      setRestartingSide(null)
+    }
+  }
+
   const activeGameModule = resolveGameModule(activeGame?.id)
   const summary = session && activeGameModule ? activeGameModule.getSummary(session) : null
   const activeGameLabel = getGameLabel(
@@ -345,6 +1064,28 @@ function AppContent() {
     session && summary?.status === 'finished' ? `${session.id}:${session.updatedAt}` : null
   const showGameOverDialog =
     Boolean(finishedSessionKey) && activeGameOverSessionKey === finishedSessionKey
+  const playerSummaries =
+    session && activeGame
+      ? resolveGameSides(activeGame, session).map((side) => {
+          const seat = session.aiSeats?.[side]
+          const launcher = seat?.enabled ? (seat.launcher ?? 'human') : 'human'
+          const status = seat?.enabled ? (seat.status ?? 'idle') : 'idle'
+
+          return {
+            side,
+            launcherLabel: getLauncherDisplayLabel(t, launcher),
+            status,
+            statusLabel: getAiSeatStatusLabel(language, status),
+            lastError: seat?.lastError ?? null,
+            canRestart: Boolean(
+              seat?.enabled &&
+                seat.launcher !== 'human' &&
+                status === 'errored',
+            ),
+          }
+        })
+      : []
+  const activeThinkingPlayer = playerSummaries.find((item) => item.status === 'thinking')
   const gameOverDialog =
     showGameOverDialog && summary && activeGame ? (
       <div className="board-panel-modal" role="presentation">
@@ -401,6 +1142,18 @@ function AppContent() {
     previousStatusBySessionRef.current.set(session.id, summary.status)
   }, [session?.id, session?.updatedAt, summary?.status])
 
+  function handleOpenEditPlayers() {
+    if (!session || !activeGame) {
+      return
+    }
+
+    setPlayerDialogError(null)
+    setEditSeatLauncherDrafts(
+      buildSeatLauncherDraftMap(session, activeGame, providers, runtimeSettings, {}),
+    )
+    setEditPlayersOpen(true)
+  }
+
   return (
     <main className="app-shell">
       <section className="hero-panel">
@@ -444,11 +1197,19 @@ function AppContent() {
               sessions={sessions}
               selectedGameId={selectedGameId}
               selectedSessionId={session?.id}
-              onCreateSession={handleCreateSession}
+              onCreateSession={handleOpenCreateSession}
               onGameChange={setSelectedGameId}
               onSessionChange={handleSessionChange}
               onRefreshSession={handleRefreshSession}
               onResetSession={handleResetSession}
+              playerSummaries={playerSummaries}
+              restartingSide={restartingSide}
+              onOpenEditPlayers={handleOpenEditPlayers}
+              onRestartAi={handleRestartAi}
+              onOpenAiSettings={() => {
+                setFocusedRuntimeProviderId(null)
+                setAiSettingsOpen(true)
+              }}
             />
           </div>
         </div>
@@ -479,11 +1240,97 @@ function AppContent() {
             session={session}
             error={error}
             gameOverDialog={gameOverDialog}
-            onSessionUpdate={setSession}
+            setupPanel={
+              activeThinkingPlayer ? (
+                <li
+                  className="message-feed-item message-feed-item-system message-feed-item-pending"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <article className="message-feed-bubble">
+                    <p className="message-feed-meta">restflow-bridge</p>
+                    <strong>{t('ai.status.thinking')}</strong>
+                    <p className="message-feed-summary message-feed-summary-pending">
+                      <span className="message-feed-pending-dot" aria-hidden="true" />
+                      <span>
+                        {t('ai.activity.thinking', {
+                          side: getSideLabel(language, activeThinkingPlayer.side),
+                          launcher: activeThinkingPlayer.launcherLabel,
+                        })}
+                      </span>
+                    </p>
+                  </article>
+                </li>
+              ) : null
+            }
+            onSessionUpdate={applySessionSnapshot}
             onError={setError}
           />
         )}
       </section>
+
+      <AiSettingsDialog
+        open={aiSettingsOpen}
+        focusedProviderId={focusedRuntimeProviderId}
+        providers={providers}
+        profiles={profiles}
+        settings={runtimeSettings}
+        drafts={providerDrafts}
+        loading={aiLoading}
+        error={aiError}
+        notice={aiNotice}
+        busyProviderId={providerBusyId}
+        onClose={() => {
+          setAiSettingsOpen(false)
+          setFocusedRuntimeProviderId(null)
+        }}
+        onRefresh={loadAiRuntime}
+        onDraftChange={handleProviderDraftChange}
+        onSaveProvider={handleSaveProviderSettings}
+        onTestProvider={handleTestProvider}
+      />
+
+      <SeatLauncherDialog
+        open={createSessionOpen}
+        mode="create"
+        game={games.find((candidate) => candidate.id === selectedGameId)}
+        games={games}
+        selectedGameId={selectedGameId}
+        providers={providers}
+        settings={runtimeSettings}
+        drafts={createSeatLauncherDrafts}
+        saving={playersBusy}
+        error={playerDialogError}
+        onClose={() => {
+          setCreateSessionOpen(false)
+          setPlayerDialogError(null)
+        }}
+        onSubmit={handleCreateSession}
+        onDraftChange={handleCreateSeatLauncherDraftChange}
+        onGameChange={(gameId) => {
+          setSelectedGameId(gameId)
+          setPlayerDialogError(null)
+        }}
+      />
+
+      <SeatLauncherDialog
+        open={editPlayersOpen}
+        mode="edit"
+        game={activeGame}
+        games={games}
+        selectedGameId={activeGame?.id ?? selectedGameId}
+        providers={providers}
+        settings={runtimeSettings}
+        drafts={editSeatLauncherDrafts}
+        saving={playersBusy}
+        error={playerDialogError}
+        onClose={() => {
+          setEditPlayersOpen(false)
+          setPlayerDialogError(null)
+        }}
+        onSubmit={handleSavePlayers}
+        onDraftChange={handleEditSeatLauncherDraftChange}
+      />
     </main>
   )
 }

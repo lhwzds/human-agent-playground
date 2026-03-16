@@ -8,9 +8,25 @@ const closeStream = vi.fn()
 let emitSessionUpdate: ((session: unknown) => void) | null = null
 
 vi.mock('../api', () => ({
+  RequestError: class RequestError extends Error {
+    code?: string
+    details?: Record<string, unknown>
+
+    constructor(message: string, code?: string, details?: Record<string, unknown>) {
+      super(message)
+      this.name = 'RequestError'
+      this.code = code
+      this.details = details
+    }
+  },
+  createAuthProfile: vi.fn(),
   createSession: vi.fn(),
+  deleteAuthProfile: vi.fn(),
+  getAiRuntimeSettings: vi.fn(),
   getSession: vi.fn(),
+  listAuthProfiles: vi.fn().mockResolvedValue([]),
   listGames: vi.fn(),
+  listProviders: vi.fn().mockResolvedValue([]),
   listSessions: vi.fn(),
   openSessionStream: vi.fn((_sessionId: string, onSession: (session: unknown) => void, onStateChange?: (state: 'connecting' | 'live' | 'reconnecting') => void) => {
     emitSessionUpdate = onSession
@@ -20,15 +36,123 @@ vi.mock('../api', () => ({
     }
   }),
   resetSession: vi.fn(),
+  saveAiRuntimeSettings: vi.fn(),
+  testAuthProfile: vi.fn(),
+  updateAiSeatLauncher: vi.fn(),
+  updateAiSeat: vi.fn(),
+  updateAuthProfile: vi.fn(),
 }))
 
-import { getSession, listGames, listSessions, resetSession } from '../api'
+import {
+  createSession,
+  getAiRuntimeSettings,
+  getSession,
+  listGames,
+  listSessions,
+  RequestError,
+  resetSession,
+  saveAiRuntimeSettings,
+  testAuthProfile,
+  updateAiSeatLauncher,
+} from '../api'
+
+function createAiRuntimePayload() {
+  return {
+    settings: {
+      providers: [
+        {
+          providerId: 'openai',
+          displayName: 'OpenAI Default',
+          defaultModel: 'gpt-5',
+          defaultProfileId: 'profile-openai',
+          preferredSource: null,
+        },
+        {
+          providerId: 'anthropic',
+          displayName: null,
+          defaultModel: 'claude-sonnet-4.5',
+          defaultProfileId: null,
+          preferredSource: null,
+        },
+        {
+          providerId: 'codex',
+          displayName: null,
+          defaultModel: 'codex-mini-latest',
+          defaultProfileId: null,
+          preferredSource: null,
+        },
+        {
+          providerId: 'claude_code',
+          displayName: null,
+          defaultModel: 'claude-code-max',
+          defaultProfileId: null,
+          preferredSource: null,
+        },
+        {
+          providerId: 'gemini',
+          displayName: null,
+          defaultModel: 'gemini-2.5-pro',
+          defaultProfileId: null,
+          preferredSource: 'api',
+        },
+      ],
+    },
+    providers: [
+      {
+        id: 'openai',
+        label: 'OpenAI',
+        kind: 'api',
+        available: true,
+        status: 'ready',
+        authProviders: ['openai'],
+        models: [
+          {
+            id: 'gpt-5',
+            label: 'GPT-5',
+            provider: 'openai',
+            supportsTemperature: true,
+          },
+        ],
+      },
+      {
+        id: 'codex-cli',
+        label: 'Codex CLI',
+        kind: 'cli',
+        available: false,
+        status: 'missing',
+        authProviders: [],
+        models: [
+          {
+            id: 'codex-mini-latest',
+            label: 'Codex Mini',
+            provider: 'codex-cli',
+            supportsTemperature: false,
+          },
+        ],
+      },
+    ],
+    profiles: [
+      {
+        id: 'profile-openai',
+        name: 'Primary OpenAI',
+        provider: 'openai',
+        source: 'manual',
+        health: 'healthy',
+        enabled: true,
+        credentialType: 'api_key',
+        maskedValue: 'sk-a...1234',
+      },
+    ],
+  }
+}
 
 describe('App', () => {
   beforeEach(() => {
     emitSessionUpdate = null
     closeStream.mockClear()
     vi.clearAllMocks()
+    vi.mocked(getAiRuntimeSettings).mockResolvedValue(createAiRuntimePayload())
+    vi.mocked(saveAiRuntimeSettings).mockImplementation(async (settings) => settings)
     resetLanguagePreferenceForTests()
     resetBootstrapCacheForTests()
   })
@@ -446,7 +570,7 @@ describe('App', () => {
     expect(primaryRow?.querySelector('.primary-button')).toBeNull()
     expect(sessionRow?.querySelector('select')).not.toBeNull()
     expect(sessionRow?.querySelector('.primary-button')).not.toBeNull()
-    expect(toolbarActions?.querySelectorAll('button')).toHaveLength(2)
+    expect(toolbarActions?.querySelectorAll('button')).toHaveLength(3)
 
     await act(async () => {
       screen.getByRole('button', { name: 'Refresh' }).click()
@@ -522,7 +646,7 @@ describe('App', () => {
       expect(screen.getByText('游戏: 五子棋')).toBeInTheDocument()
       expect(screen.getByText('当前行棋: 黑方')).toBeInTheDocument()
       expect(screen.getByRole('heading', { name: '消息流' })).toBeInTheDocument()
-      expect(screen.getByText('已创建对局')).toBeInTheDocument()
+      expect(screen.getByText('已创建新的 五子棋 对局。')).toBeInTheDocument()
     })
   })
 
@@ -680,6 +804,863 @@ describe('App', () => {
       expect(resetSession).toHaveBeenCalledWith('session-gmk-live')
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       expect(screen.getByText('Turn: black')).toBeInTheDocument()
+    })
+  })
+
+  it('renders the AI settings dialog and compact players summary', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'chess',
+        title: 'Chess',
+        shortName: 'Chess',
+        description: 'Chess session.',
+        sides: ['white', 'black'],
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'openai',
+            enabled: true,
+            autoPlay: true,
+            model: 'gpt-5',
+            providerProfileId: 'profile-openai',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'waiting',
+            lastError: null,
+            runtimeSource: 'restflow-bridge',
+          },
+          black: {
+            side: 'black',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      },
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.queryByText('AI Seats')).not.toBeInTheDocument()
+      expect(screen.getByText('Edit Players')).toBeInTheDocument()
+      expect(screen.getByText('white')).toBeInTheDocument()
+      expect(screen.getByText('OpenAI API')).toBeInTheDocument()
+      expect(screen.getByText('waiting')).toBeInTheDocument()
+      expect(screen.getByLabelText('Players')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText('waiting').closest('.toolbar-player-chip')).toHaveClass('is-waiting')
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'AI Settings' }).click()
+    })
+
+    await waitFor(() => {
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toBeInTheDocument()
+      const openAiCard = within(dialog).getByText('OpenAI').closest('.ai-settings-provider-card')
+      const codexCard = within(dialog).getByText('Codex').closest('.ai-settings-provider-card')
+      expect(openAiCard).not.toBeNull()
+      expect(codexCard).not.toBeNull()
+      expect(within(openAiCard as HTMLElement).getByDisplayValue('OpenAI Default')).toBeInTheDocument()
+      expect(within(openAiCard as HTMLElement).getByRole('combobox', { name: 'Default Model' })).toHaveValue('gpt-5')
+      expect(within(openAiCard as HTMLElement).getByText('Credential: sk-a...1234')).toBeInTheDocument()
+      expect(within(codexCard as HTMLElement).queryByText('Profile Name')).not.toBeInTheDocument()
+      expect(
+        within(codexCard as HTMLElement).getByText(
+          'This launcher uses local CLI availability and does not require an API key here.',
+        ),
+      ).toBeInTheDocument()
+    })
+  })
+
+  it('creates a session with launcher selections from the create dialog', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'chess',
+        title: 'Chess',
+        shortName: 'Chess',
+        description: 'Chess session.',
+        sides: ['white', 'black'],
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      },
+    ])
+    vi.mocked(createSession).mockResolvedValue({
+      id: 'session-chess-created',
+      gameId: 'chess',
+      createdAt: '2026-03-07T00:00:00.000Z',
+      updatedAt: '2026-03-07T00:01:00.000Z',
+      aiSeats: {
+        white: {
+          side: 'white',
+          launcher: 'human',
+          enabled: false,
+          autoPlay: false,
+          model: '',
+          providerProfileId: '',
+          promptOverride: null,
+          timeoutMs: 60000,
+          status: 'idle',
+          lastError: null,
+          runtimeSource: null,
+        },
+        black: {
+          side: 'black',
+          launcher: 'codex',
+          enabled: true,
+          autoPlay: true,
+          model: 'codex-mini-latest',
+          providerProfileId: '',
+          promptOverride: null,
+          timeoutMs: 60000,
+          status: 'waiting',
+          lastError: null,
+          runtimeSource: 'restflow-bridge',
+        },
+      },
+      events: [],
+      state: {
+        kind: 'chess',
+        turn: 'white',
+        status: 'active',
+        winner: null,
+        isCheck: false,
+        lastMove: null,
+        board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+      },
+    })
+    vi.mocked(listSessions).mockResolvedValueOnce([
+      {
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:02:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      },
+      {
+        id: 'session-chess-created',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:01:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'codex',
+            enabled: true,
+            autoPlay: true,
+            model: 'codex-mini-latest',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'waiting',
+            lastError: null,
+            runtimeSource: 'restflow-bridge',
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      },
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Create Session' })).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Create Session' }).click()
+    })
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Launcher black' }), {
+      target: { value: 'codex' },
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Create' }).click()
+    })
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({
+        gameId: 'chess',
+        seatLaunchers: {
+          white: { launcher: 'human' },
+          black: {
+            launcher: 'codex',
+            model: 'codex-mini-latest',
+            autoPlay: true,
+          },
+        },
+      })
+      expect(screen.getByRole('button', { name: 'Edit Players' })).toBeInTheDocument()
+    })
+  })
+
+  it('shows AI thinking activity and allows restarting an errored AI seat from the toolbar', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'chess',
+        title: 'Chess',
+        shortName: 'Chess',
+        description: 'Chess session.',
+        sides: ['white', 'black'],
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'codex',
+            enabled: true,
+            autoPlay: true,
+            model: 'codex-mini-latest',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'thinking',
+            lastError: null,
+            runtimeSource: 'restflow-bridge',
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'black',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      },
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      const messageFeedCard = screen.getByRole('heading', { name: 'Message Feed' }).closest('.panel-card')
+      expect(messageFeedCard).not.toBeNull()
+      const pendingMessage = within(messageFeedCard as HTMLElement)
+        .getByText('black · Codex CLI is thinking…')
+        .closest('.message-feed-item-pending')
+      expect(pendingMessage).not.toBeNull()
+      const toolbar = screen.getByRole('toolbar', { name: 'Session controls' })
+      expect(within(toolbar).getByText('thinking').closest('.toolbar-player-chip')).toHaveClass('is-thinking')
+    })
+
+    act(() => {
+      emitSessionUpdate?.({
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:02:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'codex',
+            enabled: true,
+            autoPlay: true,
+            model: 'codex-mini-latest',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'errored',
+            lastError: 'The AI response could not be turned into a valid move.',
+            runtimeSource: 'restflow-bridge',
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'black',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      })
+    })
+
+    vi.mocked(updateAiSeatLauncher).mockResolvedValue({
+      id: 'session-chess-ai',
+      gameId: 'chess',
+      createdAt: '2026-03-07T00:00:00.000Z',
+      updatedAt: '2026-03-07T00:03:00.000Z',
+      aiSeats: {
+        white: {
+          side: 'white',
+          launcher: 'human',
+          enabled: false,
+          autoPlay: false,
+          model: '',
+          providerProfileId: '',
+          promptOverride: null,
+          timeoutMs: 60000,
+          status: 'idle',
+          lastError: null,
+          runtimeSource: null,
+        },
+        black: {
+          side: 'black',
+          launcher: 'codex',
+          enabled: true,
+          autoPlay: true,
+          model: 'codex-mini-latest',
+          providerProfileId: '',
+          promptOverride: null,
+          timeoutMs: 60000,
+          status: 'waiting',
+          lastError: null,
+          runtimeSource: 'restflow-bridge',
+        },
+      },
+      events: [],
+      state: {
+        kind: 'chess',
+        turn: 'white',
+        status: 'active',
+        winner: null,
+        isCheck: false,
+        lastMove: null,
+        board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+      },
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Restart AI' })).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Restart AI' }).click()
+    })
+
+    expect(updateAiSeatLauncher).toHaveBeenCalledWith('session-chess-ai', 'black', {
+      launcher: 'codex',
+      model: 'codex-mini-latest',
+      autoPlay: true,
+    })
+  })
+
+  it('edits players through the compact edit dialog', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'chess',
+        title: 'Chess',
+        shortName: 'Chess',
+        description: 'Chess session.',
+        sides: ['white', 'black'],
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      },
+    ])
+    vi.mocked(updateAiSeatLauncher)
+      .mockResolvedValueOnce({
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:01:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'codex',
+            enabled: true,
+            autoPlay: true,
+            model: 'codex-mini-latest',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'waiting',
+            lastError: null,
+            runtimeSource: 'restflow-bridge',
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      })
+      .mockResolvedValueOnce({
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:02:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'codex',
+            enabled: true,
+            autoPlay: true,
+            model: 'codex-mini-latest',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'waiting',
+            lastError: null,
+            runtimeSource: 'restflow-bridge',
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Edit Players' })).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Edit Players' }).click()
+    })
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Launcher black' }), {
+      target: { value: 'openai' },
+    })
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Launcher black' }), {
+      target: { value: 'codex' },
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Save Players' }).click()
+    })
+
+    await waitFor(() => {
+      expect(updateAiSeatLauncher).toHaveBeenNthCalledWith(1, 'session-chess-ai', 'white', {
+        launcher: 'human',
+        model: undefined,
+        autoPlay: undefined,
+      })
+      expect(updateAiSeatLauncher).toHaveBeenNthCalledWith(2, 'session-chess-ai', 'black', {
+        launcher: 'codex',
+        model: 'codex-mini-latest',
+        autoPlay: true,
+      })
+      expect(screen.queryByRole('dialog', { name: 'Edit Players' })).not.toBeInTheDocument()
+    })
+  })
+
+  it('opens AI settings when create session hits config_missing', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'chess',
+        title: 'Chess',
+        shortName: 'Chess',
+        description: 'Chess session.',
+        sides: ['white', 'black'],
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      },
+    ])
+    vi.mocked(createSession).mockRejectedValue(
+      new RequestError('OpenAI is not configured yet', 'config_missing', {
+        providerId: 'openai',
+      }),
+    )
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Create Session' })).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Create Session' }).click()
+    })
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Launcher black' }), {
+      target: { value: 'openai' },
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Create' }).click()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('OpenAI is not configured yet')).toBeInTheDocument()
+      expect(document.querySelector('.ai-settings-provider-card-focused strong')?.textContent).toBe(
+        'OpenAI',
+      )
+    })
+  })
+
+  it('shows visible feedback after testing and saving provider settings', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'chess',
+        title: 'Chess',
+        shortName: 'Chess',
+        description: 'Chess session.',
+        sides: ['white', 'black'],
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      },
+    ])
+    vi.mocked(testAuthProfile).mockResolvedValue({ id: 'profile-openai', available: true })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'AI Settings' })).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'AI Settings' }).click()
+    })
+
+    const dialog = await screen.findByRole('dialog')
+    const openAiCard = within(dialog).getByText('OpenAI').closest('.ai-settings-provider-card')
+    const codexCard = within(dialog).getByText('Codex').closest('.ai-settings-provider-card')
+    expect(openAiCard).not.toBeNull()
+    expect(codexCard).not.toBeNull()
+
+    await act(async () => {
+      within(openAiCard as HTMLElement).getByRole('button', { name: 'Test' }).click()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('OpenAI API is ready.')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      within(codexCard as HTMLElement).getByRole('button', { name: 'Save Settings' }).click()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Saved settings for Codex CLI.')).toBeInTheDocument()
     })
   })
 })

@@ -6,8 +6,69 @@ async function selectGame(page: Parameters<typeof test>[0]['page'], gameId: stri
   await page.getByRole('combobox', { name: 'Game' }).selectOption(gameId)
 }
 
+async function createSessionThroughUi(page: Parameters<typeof test>[0]['page']) {
+  await page.getByRole('button', { name: 'Create Session' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Create Session' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Create', exact: true }).click()
+}
+
 async function readSessionId(page: Parameters<typeof test>[0]['page']) {
   return await page.getByRole('combobox', { name: 'Session' }).inputValue()
+}
+
+async function getSessionSnapshot(
+  request: Parameters<typeof test>[0]['request'],
+  sessionId: string,
+) {
+  const response = await request.get(`${apiBaseUrl}/api/sessions/${sessionId}`)
+  expect(response.ok()).toBe(true)
+  return (await response.json()) as {
+    events: Array<{ kind: string }>
+    state: { turn: string }
+    aiSeats?: Record<string, { enabled?: boolean; model?: string | null }>
+  }
+}
+
+async function listProviderCatalog(request: Parameters<typeof test>[0]['request']) {
+  const response = await request.get(`${apiBaseUrl}/api/ai/providers`)
+  expect(response.ok()).toBe(true)
+  return (await response.json()) as {
+    providers: Array<{ id: string; label: string; available: boolean }>
+  }
+}
+
+async function configureAiSeatThroughUi(
+  page: Parameters<typeof test>[0]['page'],
+  side: 'white' | 'black',
+  launcher: 'openai' | 'codex',
+  modelId: string,
+  profileName?: string,
+) {
+  if (launcher === 'openai') {
+    await page.getByRole('button', { name: 'AI Settings' }).click()
+    const dialog = page.locator('.ai-settings-dialog')
+    await expect(dialog).toBeVisible()
+    const providerCard = dialog
+      .locator('.ai-settings-provider-card')
+      .filter({ hasText: 'OpenAI' })
+      .first()
+
+    await providerCard.locator('input').nth(0).fill(profileName ?? 'OpenAI')
+    await providerCard.locator('input[type="password"]').fill(`sk-test-${profileName ?? 'openai'}`)
+    await providerCard.getByRole('button', { name: 'Save Settings' }).click()
+    await expect(providerCard.getByText(/Credential:/)).toBeVisible()
+    await page.getByRole('button', { name: 'Close' }).click()
+    await expect(dialog).toHaveCount(0)
+  }
+
+  await page.getByRole('button', { name: 'Edit Players' }).click()
+  await page.getByRole('combobox', { name: `Launcher ${side}` }).selectOption(launcher)
+  await expect(page.getByRole('combobox', { name: `Launcher ${side}` })).toHaveValue(launcher)
+  await expect(page.getByRole('combobox', { name: `Model ${side}` })).toBeVisible()
+  await page.getByRole('combobox', { name: `Model ${side}` }).selectOption(modelId)
+  await expect(page.getByRole('combobox', { name: `Model ${side}` })).toHaveValue(modelId)
+  await page.getByRole('button', { name: 'Save Players' }).click()
 }
 
 test('creates a Xiangqi session and plays a legal opening move', async ({ page }) => {
@@ -20,7 +81,7 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   await expect(page.getByText('Shared Tabletop Sessions For Humans And Agents')).toBeVisible()
   await selectGame(page, 'xiangqi')
   const previousSessionId = await readSessionId(page)
-  await page.getByRole('button', { name: 'Create Session' }).click()
+  await createSessionThroughUi(page)
   await expect(page.getByText('楚河')).toBeVisible()
   await expect(page.getByText('汉界')).toBeVisible()
   await expect(page.locator('[data-square="a6"] .board-point-segment-down')).toHaveCount(0)
@@ -29,7 +90,9 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   await expect(page.getByText('Sync: live')).toBeVisible()
   await expect(page.getByText('Turn: red')).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
-  await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible()
+  await expect(
+    page.locator('.hero-toolbar').getByRole('button', { name: 'Refresh', exact: true }),
+  ).toBeVisible()
   await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible()
 
   const heroHeights = await page.evaluate(() => {
@@ -124,7 +187,7 @@ test('reflects external session moves in real time', async ({ page, request }) =
   })
 
   const previousSessionId = await readSessionId(page)
-  await page.getByRole('button', { name: 'Create Session' }).click()
+  await createSessionThroughUi(page)
   await expect(page.getByText('Sync: live')).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
 
@@ -219,7 +282,7 @@ test('reflects external session moves in real time', async ({ page, request }) =
 test('refreshes and switches to an externally created session', async ({ page, request }) => {
   await page.goto('/')
   await selectGame(page, 'gomoku')
-  await page.getByRole('button', { name: 'Create Session' }).click()
+  await createSessionThroughUi(page)
 
   const sessionSelect = page.getByRole('combobox', { name: 'Session' })
   const createResponse = await request.post(`${apiBaseUrl}/api/sessions`, {
@@ -246,7 +309,7 @@ test('refreshes and switches to an externally created session', async ({ page, r
   })
   expect(moveResponse.ok()).toBe(true)
 
-  await page.getByRole('button', { name: 'Refresh' }).click()
+  await page.locator('.hero-toolbar').getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect
     .poll(async () => {
       return await sessionSelect.evaluate(
@@ -270,7 +333,7 @@ test('keeps the hero controls aligned and leaves room in a single-message feed',
 }) => {
   await page.goto('/')
   await selectGame(page, 'gomoku')
-  await page.getByRole('button', { name: 'Create Session' }).click()
+  await createSessionThroughUi(page)
 
   await expect(page.getByText('Game: Gomoku')).toBeVisible()
 
@@ -317,6 +380,9 @@ test('switches the shared interface to Chinese', async ({ page }) => {
   await page.getByRole('combobox', { name: 'Language' }).selectOption('zh-CN')
   await page.getByRole('combobox', { name: '游戏' }).selectOption('gomoku')
   await page.getByRole('button', { name: '创建对局' }).click()
+  const dialog = page.getByRole('dialog', { name: '创建对局' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: '创建', exact: true }).click()
 
   await expect(page.getByText('供人类与智能体共享的棋盘对局')).toBeVisible()
   await expect(page.getByText('游戏: 五子棋')).toBeVisible()
@@ -333,7 +399,7 @@ test('creates a Chess session and plays a legal opening move', async ({ page }) 
 
   await page.goto('/')
   await selectGame(page, 'chess')
-  await page.getByRole('button', { name: 'Create Session' }).click()
+  await createSessionThroughUi(page)
 
   await expect(page.getByText('Game: Chess')).toBeVisible()
   await expect(page.getByText('Turn: white')).toBeVisible()
@@ -349,6 +415,66 @@ test('creates a Chess session and plays a legal opening move', async ({ page }) 
   await expect(page.locator('[data-square="e4"]')).toHaveClass(/chess-square-last-to/)
 })
 
+test('auto-plays a black Chess seat through the Rust bridge after a human move', async ({
+  page,
+  request,
+}) => {
+  const messageFeedCard = page.locator('.panel-card', {
+    has: page.getByRole('heading', { name: 'Message Feed' }),
+  })
+
+  await page.goto('/')
+  await selectGame(page, 'chess')
+  const previousSessionId = await readSessionId(page)
+  await createSessionThroughUi(page)
+  await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
+
+  const sessionId = await readSessionId(page)
+  expect(sessionId).toBeTruthy()
+  await expect(page.getByText('Sync: live')).toBeVisible()
+  const profileName = `Chess E2E ${Date.now()}`
+  await configureAiSeatThroughUi(page, 'black', 'openai', 'gpt-5', profileName)
+  await expect
+    .poll(async () => {
+      const snapshot = await getSessionSnapshot(request, sessionId)
+      return Boolean(
+        snapshot.aiSeats?.black?.enabled && snapshot.aiSeats?.black?.model === 'gpt-5',
+      )
+    })
+    .toBe(true)
+  const blackPlayerChip = page.locator('.hero-toolbar .toolbar-row-players .toolbar-player-chip').filter({
+    hasText: 'black',
+  }).first()
+  await expect(blackPlayerChip).toContainText(/idle|waiting/)
+
+  await page.locator('[data-square="e2"]').click()
+  await page.locator('[data-square="e4"]').click()
+
+  await expect(messageFeedCard.getByText('e2 → e4')).toBeVisible()
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await getSessionSnapshot(request, sessionId)
+        return {
+          events: snapshot.events.length,
+          turn: snapshot.state.turn,
+        }
+      },
+      { timeout: 10_000 },
+    )
+    .toEqual({
+      events: 3,
+      turn: 'white',
+    })
+  await expect(blackPlayerChip).toContainText('waiting')
+  await expect
+    .poll(async () => await page.locator('.message-feed-item').count(), { timeout: 10_000 })
+    .toBeGreaterThan(2)
+  await expect(page.getByText('Turn: white')).toBeVisible()
+  await expect(messageFeedCard.locator('.message-feed-summary', { hasText: /restflow-bridge/i })).toBeVisible()
+  await expect(messageFeedCard.locator('.message-feed-summary', { hasText: /gpt-5/i })).toBeVisible()
+})
+
 test('creates a Gomoku session and reflects placed stones in real time', async ({ page, request }) => {
   const messageFeedCard = page.locator('.panel-card', {
     has: page.getByRole('heading', { name: 'Message Feed' }),
@@ -356,7 +482,7 @@ test('creates a Gomoku session and reflects placed stones in real time', async (
 
   await page.goto('/')
   await selectGame(page, 'gomoku')
-  await page.getByRole('button', { name: 'Create Session' }).click()
+  await createSessionThroughUi(page)
 
   await expect(page.getByText('Game: Gomoku')).toBeVisible()
   await expect(page.getByText('Turn: black')).toBeVisible()
@@ -394,16 +520,119 @@ test('creates a Gomoku session and reflects placed stones in real time', async (
   await expect(page.locator('[data-point="i8"]')).toHaveClass(/gomoku-point-last/)
 })
 
+test('auto-plays a white Gomoku seat through the Rust bridge after a human move', async ({
+  page,
+  request,
+}) => {
+  const messageFeedCard = page.locator('.panel-card', {
+    has: page.getByRole('heading', { name: 'Message Feed' }),
+  })
+
+  await page.goto('/')
+  await selectGame(page, 'gomoku')
+  const previousSessionId = await readSessionId(page)
+  await createSessionThroughUi(page)
+  await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
+
+  const sessionId = await readSessionId(page)
+  expect(sessionId).toBeTruthy()
+  await expect(page.getByText('Sync: live')).toBeVisible()
+  const profileName = `Gomoku E2E ${Date.now()}`
+  const profileResponse = await request.post(`${apiBaseUrl}/api/ai/auth-profiles`, {
+    data: {
+      name: profileName,
+      provider: 'openai',
+      credentialType: 'api_key',
+      credentialValue: `sk-test-${Date.now()}`,
+    },
+  })
+  expect(profileResponse.ok()).toBe(true)
+  const profile = (await profileResponse.json()) as { id: string }
+
+  const runtimeResponse = await request.get(`${apiBaseUrl}/api/ai/runtime-settings`)
+  expect(runtimeResponse.ok()).toBe(true)
+  const runtimePayload = (await runtimeResponse.json()) as {
+    settings: {
+      providers: Array<{
+        providerId: string
+        displayName: string | null
+        defaultModel: string | null
+        defaultProfileId: string | null
+        preferredSource: 'api' | 'cli' | null
+      }>
+    }
+  }
+  runtimePayload.settings.providers = runtimePayload.settings.providers.map((provider) =>
+    provider.providerId === 'openai'
+      ? {
+          ...provider,
+          displayName: profileName,
+          defaultModel: 'gpt-5',
+          defaultProfileId: profile.id,
+        }
+      : provider,
+  )
+  const saveRuntimeResponse = await request.put(`${apiBaseUrl}/api/ai/runtime-settings`, {
+    data: runtimePayload.settings,
+  })
+  expect(saveRuntimeResponse.ok()).toBe(true)
+
+  const startSeatResponse = await request.patch(
+    `${apiBaseUrl}/api/sessions/${sessionId}/ai-seats/white/launcher`,
+    {
+      data: {
+        launcher: 'openai',
+        model: 'gpt-5',
+        autoPlay: true,
+      },
+    },
+  )
+  expect(startSeatResponse.ok()).toBe(true)
+  await expect
+    .poll(async () => {
+      const snapshot = await getSessionSnapshot(request, sessionId)
+      return Boolean(
+        snapshot.aiSeats?.white?.enabled && snapshot.aiSeats?.white?.model === 'gpt-5',
+      )
+    })
+    .toBe(true)
+
+  await page.locator('[data-point="h8"]').click()
+
+  await expect(messageFeedCard.locator('strong', { hasText: 'h8' })).toBeVisible()
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await getSessionSnapshot(request, sessionId)
+        return {
+          events: snapshot.events.length,
+          turn: snapshot.state.turn,
+        }
+      },
+      { timeout: 10_000 },
+    )
+    .toEqual({
+      events: 3,
+      turn: 'black',
+    })
+  await expect
+    .poll(async () => await page.locator('.message-feed-item').count(), { timeout: 10_000 })
+    .toBeGreaterThan(2)
+  await expect(page.getByText('Turn: black')).toBeVisible()
+  await expect(messageFeedCard.locator('.message-feed-summary', { hasText: /restflow-bridge/i })).toBeVisible()
+  await expect(messageFeedCard.locator('.message-feed-summary', { hasText: /gpt-5/i })).toBeVisible()
+})
+
 test('shows a game-over dialog for a finished Gomoku session and can restart it', async ({
   page,
   request,
 }) => {
   await page.goto('/')
   await selectGame(page, 'gomoku')
-  await expect(page.getByText('Game: Gomoku')).toBeVisible()
   const previousSessionId = await readSessionId(page)
-  await page.getByRole('button', { name: 'Create Session' }).click()
+  await createSessionThroughUi(page)
   await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
+  await expect(page.getByText('Game: Gomoku')).toBeVisible()
   await expect(page.getByText('Turn: black')).toBeVisible()
 
   const sessionId = await readSessionId(page)
@@ -441,6 +670,140 @@ test('shows a game-over dialog for a finished Gomoku session and can restart it'
   await expect(page.getByRole('dialog')).toHaveCount(0)
 })
 
+test('opens AI settings when a CLI launcher is unavailable for a seat launcher', async ({
+  page,
+  request,
+}) => {
+  const providerCatalog = await listProviderCatalog(request)
+  const unavailableLauncher = [
+    { providerId: 'codex-cli', launcher: 'codex', label: 'Codex' },
+    { providerId: 'claude-code', launcher: 'claude_code', label: 'Claude Code' },
+    { providerId: 'gemini-cli', launcher: 'gemini', label: 'Gemini' },
+  ].find(({ providerId }) => {
+    const provider = providerCatalog.providers.find((candidate) => candidate.id === providerId)
+    return provider?.available === false
+  })
+
+  if (!unavailableLauncher) {
+    return
+  }
+
+  await page.goto('/')
+  await selectGame(page, 'gomoku')
+  await page.getByRole('button', { name: 'Create Session' }).click()
+  await page.getByRole('combobox', { name: 'Launcher white' }).selectOption(
+    unavailableLauncher.launcher,
+  )
+  await expect(page.getByRole('combobox', { name: 'Launcher white' })).toHaveValue(
+    unavailableLauncher.launcher,
+  )
+  await page.getByRole('button', { name: 'Create' }).click()
+
+  const dialog = page.locator('.ai-settings-dialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText(/is unavailable on this machine|is not configured yet/i)).toBeVisible()
+  await expect(
+    dialog.locator('.ai-settings-provider-card-focused').getByText(unavailableLauncher.label),
+  ).toBeVisible()
+})
+
+test('shows visible feedback after saving CLI provider settings', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'AI Settings' }).click()
+
+  const dialog = page.locator('.ai-settings-dialog')
+  await expect(dialog).toBeVisible()
+
+  const codexCard = dialog
+    .locator('.ai-settings-provider-card')
+    .filter({ hasText: 'Codex' })
+    .first()
+  await codexCard.getByRole('button', { name: 'Save Settings' }).click()
+
+  await expect(dialog.getByText('Saved settings for Codex CLI.')).toBeVisible()
+})
+
+test('stops an auto-play seat when the launcher is switched back to human', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/')
+  await selectGame(page, 'gomoku')
+  const previousSessionId = await readSessionId(page)
+  await createSessionThroughUi(page)
+  await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
+
+  const sessionId = await readSessionId(page)
+  const profileName = `Stop Seat ${Date.now()}`
+  const profileResponse = await request.post(`${apiBaseUrl}/api/ai/auth-profiles`, {
+    data: {
+      name: profileName,
+      provider: 'openai',
+      credentialType: 'api_key',
+      credentialValue: `sk-test-${Date.now()}`,
+    },
+  })
+  expect(profileResponse.ok()).toBe(true)
+  const profile = (await profileResponse.json()) as { id: string }
+
+  const runtimeResponse = await request.get(`${apiBaseUrl}/api/ai/runtime-settings`)
+  expect(runtimeResponse.ok()).toBe(true)
+  const runtimePayload = (await runtimeResponse.json()) as {
+    settings: {
+      providers: Array<{
+        providerId: string
+        displayName: string | null
+        defaultModel: string | null
+        defaultProfileId: string | null
+        preferredSource: 'api' | 'cli' | null
+      }>
+    }
+  }
+  runtimePayload.settings.providers = runtimePayload.settings.providers.map((provider) =>
+    provider.providerId === 'openai'
+      ? {
+          ...provider,
+          displayName: profileName,
+          defaultModel: 'gpt-5',
+          defaultProfileId: profile.id,
+        }
+      : provider,
+  )
+  const saveRuntimeResponse = await request.put(`${apiBaseUrl}/api/ai/runtime-settings`, {
+    data: runtimePayload.settings,
+  })
+  expect(saveRuntimeResponse.ok()).toBe(true)
+
+  const startSeatResponse = await request.patch(
+    `${apiBaseUrl}/api/sessions/${sessionId}/ai-seats/white/launcher`,
+    {
+      data: {
+        launcher: 'openai',
+        model: 'gpt-5',
+        autoPlay: true,
+      },
+    },
+  )
+  expect(startSeatResponse.ok()).toBe(true)
+
+  await page.getByRole('button', { name: 'Edit Players' }).click()
+  await expect(page.getByRole('combobox', { name: 'Launcher white' })).toHaveValue('openai')
+  await page.getByRole('combobox', { name: 'Launcher white' }).selectOption('human')
+  await page.getByRole('button', { name: 'Save Players' }).click()
+
+  const playersSummary = page.locator('.toolbar-player-summary')
+  await expect(playersSummary.getByText('white').first()).toBeVisible()
+  await expect(playersSummary.getByText('Human')).toBeVisible()
+
+  await page.locator('[data-point="h8"]').click()
+  await expect(page.getByText('Turn: white')).toBeVisible()
+
+  await page.waitForTimeout(1500)
+  const snapshot = await getSessionSnapshot(request, sessionId)
+  expect(snapshot.events).toHaveLength(2)
+  expect(snapshot.state.turn).toBe('white')
+})
+
 test('creates a Connect Four session and drops a legal opening disc', async ({ page }) => {
   const messageFeedCard = page.locator('.panel-card', {
     has: page.getByRole('heading', { name: 'Message Feed' }),
@@ -448,7 +811,7 @@ test('creates a Connect Four session and drops a legal opening disc', async ({ p
 
   await page.goto('/')
   await selectGame(page, 'connect-four')
-  await page.getByRole('button', { name: 'Create Session' }).click()
+  await createSessionThroughUi(page)
 
   await expect(page.getByText('Game: Connect Four')).toBeVisible()
   await expect(page.getByText('Turn: red')).toBeVisible()
@@ -469,7 +832,7 @@ test('creates an Othello session and reflects legal opening play', async ({ page
 
   await page.goto('/')
   await selectGame(page, 'othello')
-  await page.getByRole('button', { name: 'Create Session' }).click()
+  await createSessionThroughUi(page)
 
   await expect(page.getByText('Game: Othello')).toBeVisible()
   await expect(page.getByText('Turn: black')).toBeVisible()
