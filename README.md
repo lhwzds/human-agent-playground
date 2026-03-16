@@ -12,7 +12,7 @@ One session can be used from:
 
 Any local agent host that can call MCP can join or start a match here, including Codex, Claude Code, Gemini CLI, OpenClaw, and similar agent clients.
 
-The primary runtime path now also includes an embedded RestFlow Rust bridge for provider/auth management and one-turn AI decisions, so the web app can auto-play seats without relying on an external MCP host to keep looping.
+The primary runtime path now runs through one Rust Axum backend that owns sessions, HTTP API, SSE, MCP, provider/auth management, and one-turn AI decisions.
 
 Current built-in games:
 
@@ -39,15 +39,14 @@ This is a real shared Xiangqi session captured from the current UI, including th
 
 ```bash
 npm install
-npm run dev:server
 npm run dev:web
-cargo run --manifest-path apps/ai-bridge/Cargo.toml
+npm run dev:backend
 ```
 
 Fixed local ports:
 
 ```bash
-npm --prefix apps/server run start
+npm run dev:backend
 npm --prefix apps/web run start
 ```
 
@@ -60,26 +59,23 @@ bash scripts/dev.sh
 Override ports or data path when needed:
 
 ```bash
-API_PORT=8787 WEB_PORT=4173 HUMAN_AGENT_PLAYGROUND_DATA_PATH=/tmp/hap.json bash scripts/dev.sh
+API_PORT=8787 WEB_PORT=4173 HUMAN_AGENT_PLAYGROUND_DATA_PATH=/tmp/hap.json HUMAN_AGENT_PLAYGROUND_AUTH_DATA_PATH=/tmp/hap-auth.db bash scripts/dev.sh
 ```
 
 Default local endpoints:
 
-- UI: `http://127.0.0.1:4173`
-- HTTP API: `http://127.0.0.1:8787/api`
-- MCP: `http://127.0.0.1:8787/mcp`
-- AI bridge health: `http://127.0.0.1:8795/health`
-- AI bridge providers: `http://127.0.0.1:8795/api/providers`
-- Health: `http://127.0.0.1:8787/health`
+- UI: `http://127.0.0.1:4178`
+- HTTP API: `http://127.0.0.1:8790/api`
+- MCP: `http://127.0.0.1:8790/mcp`
+- Health: `http://127.0.0.1:8790/health`
 
 Override with:
 
 - `PORT`
 - `HUMAN_AGENT_PLAYGROUND_DATA_PATH`
+- `HUMAN_AGENT_PLAYGROUND_AUTH_DATA_PATH`
 - `VITE_API_URL`
-- `AI_BRIDGE_PORT`
-- `HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_DATA_PATH`
-- `HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_URL`
+- `VITE_API_PORT`
 
 ## How To Play
 
@@ -104,10 +100,11 @@ Typical flow:
 
 ## Built-In AI Runtime
 
-The Node game server remains the source of truth for sessions, game rules, SSE, and MCP.
+The Rust backend is now the single source of truth for:
 
-The new Rust bridge is responsible for:
-
+- sessions and game rules
+- HTTP API and SSE
+- MCP tools
 - provider/model catalog discovery
 - auth profile and credential storage
 - single-turn AI decisions for auto-play seats
@@ -122,7 +119,7 @@ The web UI now exposes:
 This means a session can run in two ways:
 
 - MCP-driven shared play for external agent hosts
-- built-in AI seats driven by the RestFlow bridge
+- built-in AI seats driven by the Rust runtime
 
 ## How To Prompt An Agent For One Full Game
 

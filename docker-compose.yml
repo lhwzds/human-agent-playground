@@ -1,26 +1,12 @@
 services:
-  ai-bridge:
+  backend:
     build:
       context: .
-      dockerfile: Dockerfile.ai-bridge
-    environment:
-      PORT: 8795
-      HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_DATA_PATH: /data/restflow.db
-    ports:
-      - "${HOST_AI_BRIDGE_PORT:-8795}:8795"
-    volumes:
-      - human-agent-playground-bridge-data:/data
-
-  server:
-    build:
-      context: .
-      dockerfile: Dockerfile.server
-    depends_on:
-      - ai-bridge
+      dockerfile: Dockerfile.backend
     environment:
       PORT: 8790
       HUMAN_AGENT_PLAYGROUND_DATA_PATH: /data/sessions.json
-      HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_URL: http://ai-bridge:8795
+      HUMAN_AGENT_PLAYGROUND_AUTH_DATA_PATH: /data/restflow.db
     ports:
       - "${HOST_API_PORT:-8790}:8790"
     volumes:
@@ -34,10 +20,9 @@ services:
         VITE_API_URL: "${VITE_API_URL:-}"
         VITE_API_PORT: "${VITE_API_PORT:-8790}"
     depends_on:
-      - server
+      - backend
     ports:
       - "${HOST_WEB_PORT:-4178}:4178"
 
 volumes:
   human-agent-playground-data:
-  human-agent-playground-bridge-data:

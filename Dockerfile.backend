@@ -1,0 +1,25 @@
+FROM rust:1.85-bookworm AS build
+
+WORKDIR /app
+
+COPY . .
+
+RUN cargo build --release -p human-agent-playground-backend
+
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+ENV PORT=8790
+ENV HUMAN_AGENT_PLAYGROUND_DATA_PATH=/data/sessions.json
+ENV HUMAN_AGENT_PLAYGROUND_AUTH_DATA_PATH=/data/restflow.db
+
+COPY --from=build /app/target/release/human-agent-playground-backend /usr/local/bin/human-agent-playground-backend
+
+EXPOSE 8790
+
+CMD ["human-agent-playground-backend"]
