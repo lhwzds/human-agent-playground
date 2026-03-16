@@ -23,6 +23,7 @@ echo "  API port: ${PORT}"
 echo "  Data path: ${HUMAN_AGENT_PLAYGROUND_DATA_PATH}"
 echo "  Web port: 4178"
 echo "  VITE_API_URL: ${VITE_API_URL}"
+echo "  VITE_API_PORT: ${VITE_API_PORT:-8790}"
 
 npm --prefix packages/core run build
 npm --prefix games/xiangqi run build
@@ -49,7 +50,7 @@ WATCHER_PIDS="${WATCHER_CORE_PID} ${WATCHER_XIANGQI_PID} ${WATCHER_GOMOKU_PID} $
 PORT="${PORT}" HUMAN_AGENT_PLAYGROUND_DATA_PATH="${HUMAN_AGENT_PLAYGROUND_DATA_PATH}" HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_URL="${HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_URL:-http://ai-bridge:8795}" npm --prefix apps/server run dev &
 SERVER_PID=$!
 
-VITE_API_URL="${VITE_API_URL}" npm --prefix apps/web run dev -- --host 0.0.0.0 --port 4178 --strictPort &
+VITE_API_URL="${VITE_API_URL}" VITE_API_PORT="${VITE_API_PORT:-8790}" npm --prefix apps/web run dev -- --host 0.0.0.0 --port 4178 --strictPort &
 WEB_PID=$!
 
 wait -n "${SERVER_PID}" "${WEB_PID}" "${WATCHER_CORE_PID}" "${WATCHER_XIANGQI_PID}" "${WATCHER_GOMOKU_PID}" "${WATCHER_CONNECT_FOUR_PID}" "${WATCHER_OTHELLO_PID}" "${WATCHER_CHESS_PID}"

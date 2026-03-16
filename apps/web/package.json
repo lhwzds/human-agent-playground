@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "check": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && npm --prefix ../../games/gomoku run build && npm --prefix ../../games/connect-four run build && npm --prefix ../../games/othello run build && npm --prefix ../../games/chess run build && tsc -b",
     "preview": "vite preview",
-    "start": "vite --host 127.0.0.1 --port 4173",
+    "start": "vite --host 0.0.0.0 --port 4173",
     "test": "npm --prefix ../../packages/core run build && npm --prefix ../../games/xiangqi run build && npm --prefix ../../games/gomoku run build && npm --prefix ../../games/connect-four run build && npm --prefix ../../games/othello run build && npm --prefix ../../games/chess run build && vitest run"
   },
   "dependencies": {

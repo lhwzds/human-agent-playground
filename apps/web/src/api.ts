@@ -13,7 +13,34 @@ import type {
   CreateSessionInput,
 } from '@human-agent-playground/core'
 
-const baseUrl = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8787'
+function normalizeApiUrl(value: string | undefined): string | null {
+  if (!value) {
+    return null
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+export function resolveApiBaseUrl(
+  apiUrl = import.meta.env.VITE_API_URL,
+  apiPort = import.meta.env.VITE_API_PORT,
+  locationLike: Pick<Location, 'protocol' | 'hostname'> | null | undefined = globalThis.location,
+): string {
+  const explicitUrl = normalizeApiUrl(apiUrl)
+  if (explicitUrl) {
+    return explicitUrl
+  }
+
+  if (locationLike?.protocol && locationLike.hostname) {
+    const resolvedPort = normalizeApiUrl(apiPort) ?? '8787'
+    return `${locationLike.protocol}//${locationLike.hostname}:${resolvedPort}`
+  }
+
+  return `http://127.0.0.1:${normalizeApiUrl(apiPort) ?? '8787'}`
+}
+
+const baseUrl = resolveApiBaseUrl()
 
 export class RequestError extends Error {
   readonly code?: string
