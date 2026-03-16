@@ -9,3 +9,4 @@ coverage
 .human-agent-playground-data
 playwright-report
 test-results
+target

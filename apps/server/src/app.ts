@@ -6,7 +6,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import type { GameSession, SessionStreamEvent } from '@human-agent-playground/core'
 
-import { GameService } from './game-service.js'
+import { GameService, GameServiceError } from './game-service.js'
 import { createMcpServer } from './mcp/create-mcp-server.js'
 
 export function createApp(service = new GameService()) {
@@ -107,6 +107,94 @@ export function createApp(service = new GameService()) {
     }
   })
 
+  app.get('/api/ai/providers', async (_request, response, next) => {
+    try {
+      response.json({ providers: await service.listProviderCapabilities() })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get('/api/ai/auth-profiles', async (_request, response, next) => {
+    try {
+      response.json({ profiles: await service.listAuthProfiles() })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post('/api/ai/auth-profiles', async (request, response, next) => {
+    try {
+      response.status(201).json(await service.createAuthProfile(request.body))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.patch('/api/ai/auth-profiles/:profileId', async (request, response, next) => {
+    try {
+      response.json(await service.updateAuthProfile(request.params.profileId, request.body))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.delete('/api/ai/auth-profiles/:profileId', async (request, response, next) => {
+    try {
+      response.json(await service.deleteAuthProfile(request.params.profileId))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.post('/api/ai/auth-profiles/:profileId/test', async (request, response, next) => {
+    try {
+      response.json(await service.testAuthProfile(request.params.profileId))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get('/api/ai/runtime-settings', async (_request, response, next) => {
+    try {
+      response.json(await service.getAiRuntimeSettings())
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.put('/api/ai/runtime-settings', async (request, response, next) => {
+    try {
+      response.json({ settings: await service.updateAiRuntimeSettings(request.body) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.get('/api/sessions/:sessionId/ai-seats', async (request, response, next) => {
+    try {
+      response.json({ seats: await service.getAiSeats(request.params.sessionId) })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.patch('/api/sessions/:sessionId/ai-seats/:side', async (request, response, next) => {
+    try {
+      response.json(await service.updateAiSeat(request.params.sessionId, request.params.side, request.body))
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  app.patch('/api/sessions/:sessionId/ai-seats/:side/launcher', async (request, response, next) => {
+    try {
+      response.json(await service.updateAiSeatLauncher(request.params.sessionId, request.params.side, request.body))
+    } catch (error) {
+      next(error)
+    }
+  })
+
   app.get('/api/sessions/:sessionId/stream', async (request, response, next) => {
     try {
       const session = await service.getSession(request.params.sessionId)
@@ -164,6 +252,15 @@ export function createApp(service = new GameService()) {
   })
 
   app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
+    if (error instanceof GameServiceError) {
+      response.status(error.statusCode).json({
+        error: error.message,
+        code: error.code,
+        ...(error.details ?? {}),
+      })
+      return
+    }
+
     const message = error instanceof Error ? error.message : 'Unexpected server error'
     const statusCode =
       message.startsWith('Session not found') ? 404 : message.startsWith('Unsupported game') ? 404 : 400

@@ -12,6 +12,8 @@ One session can be used from:
 
 Any local agent host that can call MCP can join or start a match here, including Codex, Claude Code, Gemini CLI, OpenClaw, and similar agent clients.
 
+The primary runtime path now also includes an embedded RestFlow Rust bridge for provider/auth management and one-turn AI decisions, so the web app can auto-play seats without relying on an external MCP host to keep looping.
+
 Current built-in games:
 
 - Xiangqi
@@ -39,6 +41,7 @@ This is a real shared Xiangqi session captured from the current UI, including th
 npm install
 npm run dev:server
 npm run dev:web
+cargo run --manifest-path apps/ai-bridge/Cargo.toml
 ```
 
 Fixed local ports:
@@ -65,6 +68,8 @@ Default local endpoints:
 - UI: `http://127.0.0.1:4173`
 - HTTP API: `http://127.0.0.1:8787/api`
 - MCP: `http://127.0.0.1:8787/mcp`
+- AI bridge health: `http://127.0.0.1:8795/health`
+- AI bridge providers: `http://127.0.0.1:8795/api/providers`
 - Health: `http://127.0.0.1:8787/health`
 
 Override with:
@@ -72,6 +77,9 @@ Override with:
 - `PORT`
 - `HUMAN_AGENT_PLAYGROUND_DATA_PATH`
 - `VITE_API_URL`
+- `AI_BRIDGE_PORT`
+- `HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_DATA_PATH`
+- `HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_URL`
 
 ## How To Play
 
@@ -93,6 +101,28 @@ Typical flow:
 4. The agent checks moves with the matching game-specific legal move tool such as `xiangqi_get_legal_moves` or `chess_get_legal_moves`.
 5. The agent plays with the matching `*_play_move_and_wait` tool for long-running shared play.
 6. The UI updates live through SSE.
+
+## Built-In AI Runtime
+
+The Node game server remains the source of truth for sessions, game rules, SSE, and MCP.
+
+The new Rust bridge is responsible for:
+
+- provider/model catalog discovery
+- auth profile and credential storage
+- single-turn AI decisions for auto-play seats
+
+The web UI now exposes:
+
+- provider/model status
+- auth profile CRUD + test
+- per-seat AI assignment
+- auto-play status for each side
+
+This means a session can run in two ways:
+
+- MCP-driven shared play for external agent hosts
+- built-in AI seats driven by the RestFlow bridge
 
 ## How To Prompt An Agent For One Full Game
 

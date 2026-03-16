@@ -9,4 +9,5 @@ export const gomokuGameCatalogItem: GameCatalogItem = {
   shortName: 'Gomoku',
   description:
     'A 15x15 connection game where black and white alternate placing stones and race to make five in a row.',
+  sides: ['black', 'white'],
 }

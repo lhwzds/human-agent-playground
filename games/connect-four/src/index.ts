@@ -9,4 +9,5 @@ export const connectFourGameCatalogItem: GameCatalogItem = {
   shortName: 'Connect Four',
   description:
     'A vertical 7x6 connection game where red and yellow drop discs into columns and race to connect four.',
+  sides: ['red', 'yellow'],
 }

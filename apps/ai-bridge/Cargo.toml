@@ -1,0 +1,24 @@
+[package]
+name = "human-agent-playground-ai-bridge"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+axum = { version = "0.8.4", features = ["macros"] }
+chrono = { version = "0.4.42", features = ["serde"] }
+json5 = "0.4.1"
+reqwest = { version = "0.12.24", features = ["json"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tokio = { version = "1.47.1", features = ["full"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["fmt", "env-filter"] }
+which = "8.0.0"
+
+restflow-core = { package = "restflow-core", git = "https://github.com/lhwzds/restflow.git", rev = "494b81f691a969d6f3f1ee76daea5bee0ffe9df7" }
+restflow-ai = { package = "restflow-ai", git = "https://github.com/lhwzds/restflow.git", rev = "494b81f691a969d6f3f1ee76daea5bee0ffe9df7" }
+restflow-storage = { package = "restflow-storage", git = "https://github.com/lhwzds/restflow.git", rev = "494b81f691a969d6f3f1ee76daea5bee0ffe9df7" }
+
+[dev-dependencies]
+tower = { version = "0.5.2", features = ["util"] }

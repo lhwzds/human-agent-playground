@@ -9,4 +9,5 @@ export const chessGameCatalogItem: GameCatalogItem = {
   shortName: 'Chess',
   description:
     'An 8x8 royal strategy game where white and black maneuver pieces, deliver checkmate, and fight for the center.',
+  sides: ['white', 'black'],
 }

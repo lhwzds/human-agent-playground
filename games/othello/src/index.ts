@@ -9,4 +9,5 @@ export const othelloGameCatalogItem: GameCatalogItem = {
   shortName: 'Othello',
   description:
     'An 8x8 disk-flipping game where black and white bracket opposing discs and control the final board count.',
+  sides: ['black', 'white'],
 }

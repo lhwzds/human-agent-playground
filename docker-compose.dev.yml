@@ -1,11 +1,32 @@
 services:
+  ai-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai-bridge
+    environment:
+      PORT: 8795
+      HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_DATA_PATH: /data/restflow.db
+    ports:
+      - "${DEV_HOST_AI_BRIDGE_PORT:-8795}:8795"
+    volumes:
+      - human-agent-playground-bridge-dev-data:/data
+    develop:
+      watch:
+        - action: rebuild
+          path: ./apps/ai-bridge
+        - action: rebuild
+          path: ./.cargo/config.toml
+
   dev:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    depends_on:
+      - ai-bridge
     environment:
       PORT: 8790
       HUMAN_AGENT_PLAYGROUND_DATA_PATH: /data/sessions.json
+      HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_URL: http://ai-bridge:8795
       VITE_API_URL: "${VITE_API_URL:-http://127.0.0.1:8793}"
       CHOKIDAR_USEPOLLING: "true"
       CHOKIDAR_INTERVAL: "500"
@@ -70,3 +91,4 @@ services:
 
 volumes:
   human-agent-playground-dev-data:
+  human-agent-playground-bridge-dev-data:
