@@ -466,7 +466,7 @@ test('auto-plays a black Chess seat through the Rust bridge after a human move',
       events: 3,
       turn: 'white',
     })
-  await expect(blackPlayerChip).toContainText('waiting')
+  await expect(blackPlayerChip).toContainText('idle')
   await expect
     .poll(async () => await page.locator('.message-feed-item').count(), { timeout: 10_000 })
     .toBeGreaterThan(2)

@@ -105,6 +105,12 @@ interface AiSeatFailure {
   rawResponsePreview?: string | null
 }
 
+interface AiSeatRunToken {
+  sessionUpdatedAt: string
+  lastEventId: string | null
+  seatSignature: string
+}
+
 export class GameServiceError extends Error {
   constructor(
     message: string,
@@ -690,6 +696,10 @@ export class GameService {
     this.activeSeatRuns.add(runKey)
     void this.runAiSeatTurn(session.id, turn).finally(() => {
       this.activeSeatRuns.delete(runKey)
+      const latest = this.sessions.get(session.id)
+      if (latest) {
+        this.queueAiSeatTurn(latest)
+      }
     })
   }
 
@@ -710,6 +720,7 @@ export class GameService {
     })
 
     session = thinkingSession
+    const runToken = createAiSeatRunToken(session, side)
 
     try {
       const legalMoves = await this.getLegalMoves(sessionId)
@@ -750,6 +761,10 @@ export class GameService {
       }
 
       const normalizedAction = normalizeAiRuntimeAction(decision.action)
+      const latestBeforeMove = await this.getSession(sessionId)
+      if (!isAiSeatRunCurrent(latestBeforeMove, side, runToken)) {
+        return
+      }
 
       await this.playMove(sessionId, {
         ...(typeof normalizedAction === 'object' && normalizedAction !== null ? normalizedAction : {}),
@@ -775,12 +790,15 @@ export class GameService {
       }
 
       await this.persistSeatStatus(nextSession, side, {
-        status: 'waiting',
+        status: readSessionTurn(nextSession) === side ? 'waiting' : 'idle',
         lastError: null,
         runtimeSource: 'restflow-bridge',
       })
     } catch (error) {
       const latest = await this.getSession(sessionId)
+      if (!isAiSeatRunCurrent(latest, side, runToken)) {
+        return
+      }
       await this.persistSeatError(latest, side, normalizeAiSeatFailure(error))
     }
   }
@@ -790,80 +808,90 @@ export class GameService {
     side: string,
     partial: Pick<AiSeatConfig, 'status' | 'lastError' | 'runtimeSource'>,
   ) {
-    const adapter = getGameAdapter(session.gameId)
-    const aiSeats = normalizeAiSeats(adapter.game.sides, session.aiSeats)
-    const seat = aiSeats[side]
-    if (!seat) {
-      return session
-    }
+    return this.updateLatestSession(session.id, (latest) => {
+      const adapter = getGameAdapter(latest.gameId)
+      const aiSeats = normalizeAiSeats(adapter.game.sides, latest.aiSeats)
+      const seat = aiSeats[side]
+      if (!seat) {
+        return latest
+      }
 
-    const updated: GameSession = {
-      ...session,
-      updatedAt: new Date().toISOString(),
-      aiSeats: {
-        ...aiSeats,
-        [side]: {
-          ...seat,
-          ...partial,
+      return {
+        ...latest,
+        updatedAt: new Date().toISOString(),
+        aiSeats: {
+          ...aiSeats,
+          [side]: {
+            ...seat,
+            ...partial,
+          },
         },
-      },
-    }
-
-    this.sessions.set(session.id, updated)
-    await this.persist()
-    this.emitSessionUpdate(updated)
-    return updated
+      }
+    })
   }
 
   private async persistSeatError(session: GameSession, side: string, failure: AiSeatFailure) {
-    const adapter = getGameAdapter(session.gameId)
-    const aiSeats = normalizeAiSeats(adapter.game.sides, session.aiSeats)
-    const seat = aiSeats[side]
-    if (!seat) {
-      return session
-    }
+    return this.updateLatestSession(session.id, (latest) => {
+      const adapter = getGameAdapter(latest.gameId)
+      const aiSeats = normalizeAiSeats(adapter.game.sides, latest.aiSeats)
+      const seat = aiSeats[side]
+      if (!seat) {
+        return latest
+      }
 
-    const timestamp = new Date().toISOString()
-    const summary = `AI seat ${side} stopped: ${failure.noticeSummary}`
-    const lastEvent = session.events.at(-1)
-    const shouldAppendNotice = !(
-      seat.status === 'errored' &&
-      seat.lastError === failure.userMessage &&
-      lastEvent?.kind === 'system_notice' &&
-      lastEvent.summary === summary
-    )
+      const timestamp = new Date().toISOString()
+      const summary = `AI seat ${side} stopped: ${failure.noticeSummary}`
+      const lastEvent = latest.events.at(-1)
+      const shouldAppendNotice = !(
+        seat.status === 'errored' &&
+        seat.lastError === failure.userMessage &&
+        lastEvent?.kind === 'system_notice' &&
+        lastEvent.summary === summary
+      )
 
-    const updated: GameSession = {
-      ...session,
-      updatedAt: timestamp,
-      aiSeats: {
-        ...aiSeats,
-        [side]: {
-          ...seat,
-          status: 'errored',
-          lastError: failure.userMessage,
-          runtimeSource: 'restflow-bridge',
+      return {
+        ...latest,
+        updatedAt: timestamp,
+        aiSeats: {
+          ...aiSeats,
+          [side]: {
+            ...seat,
+            status: 'errored',
+            lastError: failure.userMessage,
+            runtimeSource: 'restflow-bridge',
+          },
         },
-      },
-      events: shouldAppendNotice
-        ? [
-            ...session.events,
-            createSystemNoticeEvent({
-              timestamp,
-              summary,
-              details: {
-                side,
-                runtimeSource: 'restflow-bridge',
-                error: failure.userMessage,
-                errorCode: failure.code,
-                rawResponsePreview: failure.rawResponsePreview ?? undefined,
-              },
-            }),
-          ]
-        : session.events,
+        events: shouldAppendNotice
+          ? [
+              ...latest.events,
+              createSystemNoticeEvent({
+                timestamp,
+                summary,
+                details: {
+                  side,
+                  runtimeSource: 'restflow-bridge',
+                  error: failure.userMessage,
+                  errorCode: failure.code,
+                  rawResponsePreview: failure.rawResponsePreview ?? undefined,
+                },
+              }),
+            ]
+          : latest.events,
+      }
+    })
+  }
+
+  private async updateLatestSession(
+    sessionId: string,
+    updater: (session: GameSession) => GameSession,
+  ): Promise<GameSession> {
+    const latest = await this.getSession(sessionId)
+    const updated = updater(latest)
+    if (updated === latest) {
+      return latest
     }
 
-    this.sessions.set(session.id, updated)
+    this.sessions.set(sessionId, updated)
     await this.persist()
     this.emitSessionUpdate(updated)
     return updated
@@ -1476,19 +1504,77 @@ function reconcileAiSeats(
         ]
       }
 
-      if (seat.status === 'thinking' || seat.status === 'errored') {
+      if (seat.status === 'errored') {
         return [side, seat]
+      }
+
+      if (seat.status === 'thinking') {
+        return [
+          side,
+          {
+            ...seat,
+            status: turn === side ? 'thinking' : 'idle',
+          },
+        ]
       }
 
       return [
         side,
         {
           ...seat,
-          status: turn === side ? 'waiting' : 'waiting',
+          status: turn === side ? 'waiting' : 'idle',
         },
       ]
     }),
   )
+}
+
+function createAiSeatRunToken(session: GameSession, side: string): AiSeatRunToken {
+  const adapter = getGameAdapter(session.gameId)
+  const seat = normalizeAiSeats(adapter.game.sides, session.aiSeats)[side]
+  return {
+    sessionUpdatedAt: session.updatedAt,
+    lastEventId: getLatestSessionEvent(session)?.id ?? null,
+    seatSignature: buildAiSeatSignature(seat),
+  }
+}
+
+function isAiSeatRunCurrent(session: GameSession, side: string, token: AiSeatRunToken): boolean {
+  const adapter = getGameAdapter(session.gameId)
+  const seat = normalizeAiSeats(adapter.game.sides, session.aiSeats)[side]
+
+  if (!seat || !seat.enabled || !seat.autoPlay || seat.status === 'errored') {
+    return false
+  }
+
+  if (readSessionStatus(session) === 'finished' || readSessionTurn(session) !== side) {
+    return false
+  }
+
+  return (
+    session.updatedAt === token.sessionUpdatedAt &&
+    (getLatestSessionEvent(session)?.id ?? null) === token.lastEventId &&
+    buildAiSeatSignature(seat) === token.seatSignature
+  )
+}
+
+function buildAiSeatSignature(seat: AiSeatConfig | undefined): string {
+  if (!seat) {
+    return 'missing'
+  }
+
+  return stableJson({
+    side: seat.side,
+    launcher: seat.launcher,
+    enabled: seat.enabled,
+    autoPlay: seat.autoPlay,
+    providerProfileId: seat.providerProfileId ?? null,
+    model: seat.model ?? null,
+    promptOverride: seat.promptOverride ?? null,
+    timeoutMs: seat.timeoutMs,
+    status: seat.status,
+    runtimeSource: seat.runtimeSource ?? null,
+  })
 }
 
 function includesLegalAction(legalMoves: unknown[], action: unknown): boolean {

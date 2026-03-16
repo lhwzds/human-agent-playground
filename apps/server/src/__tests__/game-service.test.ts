@@ -481,7 +481,7 @@ describe('GameService', () => {
     )
     expect(resolved.aiSeats?.black).toEqual(
       expect.objectContaining({
-        status: 'waiting',
+        status: 'idle',
         runtimeSource: 'restflow-bridge',
       }),
     )
@@ -550,7 +550,7 @@ describe('GameService', () => {
     )
     expect(resolved.aiSeats?.black).toEqual(
       expect.objectContaining({
-        status: 'waiting',
+        status: 'idle',
         runtimeSource: 'restflow-bridge',
       }),
     )
@@ -893,7 +893,7 @@ describe('GameService', () => {
       expect.objectContaining({
         launcher: 'openai',
         enabled: true,
-        status: 'waiting',
+        status: 'idle',
       }),
     )
   })
@@ -1013,7 +1013,7 @@ describe('GameService', () => {
     )
     expect(resolved.aiSeats?.black).toEqual(
       expect.objectContaining({
-        status: 'waiting',
+        status: 'idle',
         runtimeSource: 'restflow-bridge',
       }),
     )
@@ -1297,7 +1297,161 @@ describe('GameService', () => {
       (candidate) => candidate.events.some((event) => event.kind === 'move_played'),
     )
 
-    expect(recovered.aiSeats?.black?.status).toBe('waiting')
+    expect(recovered.aiSeats?.black?.status).toBe('idle')
     expect(recovered.events.some((event) => event.kind === 'move_played')).toBe(true)
+  })
+
+  it('ignores a stale AI result after another actor moves for the same side', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    let resolveDecision: ((value: DecideTurnResult) => void) | null = null
+    const decisionPromise = new Promise<DecideTurnResult>((resolve) => {
+      resolveDecision = resolve
+    })
+    const aiRuntimeClient = new MockAiRuntimeClient(async () => await decisionPromise, {
+      providers: [
+        {
+          id: 'codex-cli',
+          label: 'Codex CLI',
+          kind: 'cli',
+          available: true,
+          status: 'ready',
+          authProviders: [],
+          models: [
+            {
+              id: 'codex-mini-latest',
+              label: 'Codex Mini Latest',
+              provider: 'codex-cli',
+              supportsTemperature: false,
+            },
+          ],
+        },
+      ],
+    })
+    const service = new GameService(join(directory, 'sessions.json'), aiRuntimeClient)
+
+    const session = await service.createSession({
+      gameId: 'gomoku',
+      seatLaunchers: {
+        black: {
+          launcher: 'codex',
+          model: 'codex-mini-latest',
+          autoPlay: true,
+        },
+      },
+    })
+
+    await waitFor(
+      () => service.getSession(session.id),
+      (candidate) => candidate.aiSeats?.black?.status === 'thinking',
+    )
+
+    const externallyPlayed = await service.playMove(session.id, {
+      point: 'h8',
+    })
+
+    resolveDecision?.({
+      action: { point: 'i8' },
+      reasoning: {
+        summary: 'Play another opening point.',
+        reasoningSteps: ['This stale result should be ignored.'],
+        consideredAlternatives: [],
+        confidence: 0.2,
+      },
+      usage: null,
+      model: 'codex-mini-latest',
+      provider: 'codex-cli',
+      error: null,
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 75))
+    const resolved = await service.getSession(session.id)
+
+    expect(resolved.events).toHaveLength(externallyPlayed.events.length)
+    expect(resolved.state.lastMove).toEqual(
+      expect.objectContaining({
+        point: 'h8',
+        side: 'black',
+      }),
+    )
+    expect(
+      resolved.events.some(
+        (event) =>
+          event.kind === 'move_played' &&
+          event.actorName === 'restflow-bridge' &&
+          event.details.point === 'i8',
+      ),
+    ).toBe(false)
+    expect(resolved.aiSeats?.black?.status).toBe('idle')
+  })
+
+  it('ignores a stale AI error after the seat is switched back to human', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'human-agent-playground-'))
+    let rejectDecision: ((reason?: unknown) => void) | null = null
+    const decisionPromise = new Promise<DecideTurnResult>((_resolve, reject) => {
+      rejectDecision = reject
+    })
+    const aiRuntimeClient = new MockAiRuntimeClient(async () => await decisionPromise, {
+      providers: [
+        {
+          id: 'codex-cli',
+          label: 'Codex CLI',
+          kind: 'cli',
+          available: true,
+          status: 'ready',
+          authProviders: [],
+          models: [
+            {
+              id: 'codex-mini-latest',
+              label: 'Codex Mini Latest',
+              provider: 'codex-cli',
+              supportsTemperature: false,
+            },
+          ],
+        },
+      ],
+    })
+    const service = new GameService(join(directory, 'sessions.json'), aiRuntimeClient)
+
+    const session = await service.createSession({
+      gameId: 'gomoku',
+      seatLaunchers: {
+        black: {
+          launcher: 'codex',
+          model: 'codex-mini-latest',
+          autoPlay: true,
+        },
+      },
+    })
+
+    await waitFor(
+      () => service.getSession(session.id),
+      (candidate) => candidate.aiSeats?.black?.status === 'thinking',
+    )
+
+    const stopped = await service.updateAiSeatLauncher(session.id, 'black', {
+      launcher: 'human',
+    })
+
+    rejectDecision?.(new Error('synthetic provider failure'))
+
+    await new Promise((resolve) => setTimeout(resolve, 75))
+    const resolved = await service.getSession(session.id)
+
+    expect(resolved.events).toHaveLength(stopped.events.length)
+    expect(resolved.aiSeats?.black).toEqual(
+      expect.objectContaining({
+        launcher: 'human',
+        enabled: false,
+        status: 'idle',
+        lastError: null,
+      }),
+    )
+    expect(
+      resolved.events.some(
+        (event) =>
+          event.kind === 'system_notice' &&
+          event.summary.includes('AI seat black stopped'),
+      ),
+    ).toBe(false)
   })
 })
