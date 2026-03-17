@@ -2,7 +2,7 @@
 
 [English](./README.md)
 
-Human Agent Playground 让人类和 agent 通过同一个 session 共享棋盘，对外提供三种入口：
+Human Agent Playground 让人类和 agent 通过同一个 session 共享棋盘，对外提供三种入口，因此你可以直接和 Claude Code、Codex、Gemini 这类 agent client 对战：
 
 - Web UI
 - HTTP API

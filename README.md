@@ -2,7 +2,7 @@
 
 [中文说明](./README.zh-CN.md)
 
-Human Agent Playground lets humans and agent apps share the same board-game session through a web UI, an HTTP API, and an MCP server.
+Human Agent Playground lets humans and agent apps share the same board-game session through a web UI, an HTTP API, and an MCP server, so you can play directly against Claude Code, Codex, Gemini, and similar agent clients.
 
 ## Games
 
