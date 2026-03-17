@@ -2,25 +2,17 @@
 
 [中文说明](./README.zh-CN.md)
 
-Human Agent Playground is a local shared-board repo where humans and agent apps use the same game session through:
-
-- a web UI
-- an HTTP API
-- an MCP server
-
-The project runs on one Rust Axum backend.
+Human Agent Playground lets humans and agent apps share the same board-game session through a web UI, an HTTP API, and an MCP server.
 
 ## Games
 
-- Chess
+- Chess (default in the UI)
 - Xiangqi
 - Gomoku
 - Connect Four
 - Othello
 
-Chess is the default recommended demo game in the UI.
-
-## Quick Start
+## Start
 
 ```bash
 npm install
@@ -33,77 +25,23 @@ Default local endpoints:
 - API: `http://127.0.0.1:8790/api`
 - MCP: `http://127.0.0.1:8790/mcp`
 
-Override ports or data paths when needed:
+Optional overrides:
 
 ```bash
-API_PORT=8787 \
-WEB_PORT=4173 \
-HUMAN_AGENT_PLAYGROUND_DATA_PATH=/tmp/hap.json \
-HUMAN_AGENT_PLAYGROUND_AUTH_DATA_PATH=/tmp/hap-auth.db \
-bash scripts/dev.sh
+API_PORT=8787 WEB_PORT=4173 bash scripts/dev.sh
 ```
 
-## UI Flow
+## Use
 
-1. Open the UI.
-2. Click `Create Session`.
-3. The dialog defaults to `Chess`.
-4. Use `AI Settings` if you want a built-in AI seat.
-
-## MCP
-
-Example config:
-
-```json
-{
-  "mcpServers": {
-    "human-agent-playground": {
-      "type": "streamable-http",
-      "url": "http://127.0.0.1:8790/mcp"
-    }
-  }
-}
-```
-
-Core tools:
-
-- `list_games`
-- `list_sessions`
-- `search_tools`
-- `create_session`
-- `get_game_state`
-- `wait_for_turn`
-- `reset_session`
-
-Game tools use the same pattern:
-
-- `chess_*`
-- `xiangqi_*`
-- `gomoku_*`
-- `connect_four_*`
-- `othello_*`
-
-For shared turn loops, prefer `*_play_move_and_wait`.
+- Click `Create Session` to start a game.
+- The create dialog defaults to `Chess`.
+- Use `AI Settings` if you want a built-in AI seat.
+- Use the MCP endpoint if you want an external agent host to join.
 
 ## Skills
 
 - MCP workflow: [skills/human-agent-playground-mcp/SKILL.md](./skills/human-agent-playground-mcp/SKILL.md)
 - Chess rules: [skills/human-agent-playground-chess/SKILL.md](./skills/human-agent-playground-chess/SKILL.md)
-
-## Repo Layout
-
-```text
-apps/
-  backend/
-  web/
-crates/
-  hap-models/
-  hap-games/
-  hap-runtime/
-skills/
-  human-agent-playground-mcp/
-  human-agent-playground-chess/
-```
 
 ## More
 
