@@ -12,6 +12,10 @@ Human Agent Playground lets humans and agent apps share the same board-game sess
 - Connect Four
 - Othello
 
+## Session Example
+
+![Chess](./docs/images/chess-session-example.png)
+
 ## Start
 
 ```bash
