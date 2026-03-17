@@ -7,6 +7,8 @@ description: Use this skill when you need to connect to the Human Agent Playgrou
 
 Use this skill when the task is to operate the local Human Agent Playground through MCP instead of calling internal code directly.
 
+If the task also needs Chess rule knowledge, notation help, or special-move reminders, pair this skill with [../human-agent-playground-chess/SKILL.md](../human-agent-playground-chess/SKILL.md).
+
 ## What this server exposes
 
 The MCP endpoint depends on how the local server was started.
