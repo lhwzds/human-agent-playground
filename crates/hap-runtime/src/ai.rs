@@ -16,10 +16,14 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::process::Command;
 use tracing::warn;
 
-use crate::catalog::{auth_provider_id, parse_auth_provider, provider_capabilities};
+use crate::catalog::{
+    auth_provider_id, parse_auth_provider, provider_capabilities, resolve_claude_executable,
+};
 use crate::error::RuntimeError;
 
 const RAW_RESPONSE_PREVIEW_LIMIT: usize = 400;
@@ -100,6 +104,40 @@ struct RawAlternative {
     rejected_because: Option<String>,
 }
 
+#[derive(Clone)]
+enum CompletionExecutor {
+    Client(Arc<dyn restflow_ai::llm::LlmClient>),
+    ClaudeCodeCli { cli_model: String },
+}
+
+impl CompletionExecutor {
+    async fn complete(
+        &self,
+        system_prompt: String,
+        user_prompt: String,
+    ) -> std::result::Result<restflow_ai::llm::CompletionResponse, DecisionFailure> {
+        match self {
+            Self::Client(client) => client
+                .complete(
+                    CompletionRequest::new(vec![
+                        Message::system(system_prompt),
+                        Message::user(user_prompt),
+                    ])
+                    .with_max_tokens(1200),
+                )
+                .await
+                .map_err(|error| {
+                    DecisionFailure::provider_request_failed(format!(
+                        "Failed to complete turn decision: {error}"
+                    ))
+                }),
+            Self::ClaudeCodeCli { cli_model } => {
+                complete_with_claude_code_cli(cli_model, &system_prompt, &user_prompt).await
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DecisionFailure {
     error_code: &'static str,
@@ -162,9 +200,7 @@ pub fn list_provider_capabilities() -> Vec<ProviderCapability> {
     provider_capabilities()
 }
 
-pub async fn list_auth_profiles(
-    auth_manager: Arc<AuthProfileManager>,
-) -> Vec<AuthProfileSummary> {
+pub async fn list_auth_profiles(auth_manager: Arc<AuthProfileManager>) -> Vec<AuthProfileSummary> {
     auth_manager
         .list_profiles()
         .await
@@ -264,9 +300,10 @@ pub async fn test_auth_profile(
     auth_manager: Arc<AuthProfileManager>,
     profile_id: &str,
 ) -> Result<(String, bool), RuntimeError> {
-    let profile = auth_manager.get_profile(profile_id).await.ok_or_else(|| {
-        RuntimeError::bad_request(format!("Profile not found: {}", profile_id))
-    })?;
+    let profile = auth_manager
+        .get_profile(profile_id)
+        .await
+        .ok_or_else(|| RuntimeError::bad_request(format!("Profile not found: {}", profile_id)))?;
     let available = profile.get_api_key(auth_manager.resolver()).is_ok();
     Ok((profile_id.to_string(), available))
 }
@@ -317,15 +354,6 @@ async fn decide_turn_inner(
         api_keys.insert(provider.as_llm_provider(), key);
     }
 
-    let factory = DefaultLlmClientFactory::new(api_keys, AIModel::build_model_specs());
-    let client = factory
-        .create_client(model.as_serialized_str(), api_key.as_deref())
-        .map_err(|error| {
-            DecisionFailure::provider_unavailable(format!(
-                "Failed to initialize the AI provider client: {error}"
-            ))
-        })?;
-
     let system_prompt = build_system_prompt(
         &request.game_id,
         &request.seat_side,
@@ -337,20 +365,23 @@ async fn decide_turn_inner(
         ))
     })?;
 
-    let response = client
-        .complete(
-            CompletionRequest::new(vec![
-                Message::system(system_prompt),
-                Message::user(user_prompt),
-            ])
-            .with_max_tokens(1200),
-        )
-        .await
-        .map_err(|error| {
-            DecisionFailure::provider_request_failed(format!(
-                "Failed to complete turn decision: {error}"
-            ))
-        })?;
+    let executor = if model.is_claude_code() {
+        CompletionExecutor::ClaudeCodeCli {
+            cli_model: model.as_str().to_string(),
+        }
+    } else {
+        let factory = DefaultLlmClientFactory::new(api_keys, AIModel::build_model_specs());
+        let client = factory
+            .create_client(model.as_serialized_str(), api_key.as_deref())
+            .map_err(|error| {
+                DecisionFailure::provider_unavailable(format!(
+                    "Failed to initialize the AI provider client: {error}"
+                ))
+            })?;
+        CompletionExecutor::Client(client)
+    };
+
+    let response = executor.complete(system_prompt, user_prompt).await?;
     let repair_legal_moves = request.legal_moves.clone();
 
     let content = response
@@ -376,18 +407,13 @@ async fn decide_turn_inner(
                     },
                 )?;
 
-            let repair_response = client
-                .complete(
-                    CompletionRequest::new(vec![
-                        Message::system(repair_system_prompt),
-                        Message::user(repair_user_prompt),
-                    ])
-                    .with_max_tokens(600),
-                )
+            let repair_response = executor
+                .complete(repair_system_prompt, repair_user_prompt)
                 .await
                 .map_err(|error| {
                     DecisionFailure::provider_request_failed(format!(
-                        "Failed to repair the model response: {error}"
+                        "Failed to repair the model response: {}",
+                        error.message
                     ))
                 })?;
 
@@ -549,6 +575,57 @@ async fn resolve_api_key(
     )))
 }
 
+async fn complete_with_claude_code_cli(
+    model: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+) -> std::result::Result<restflow_ai::llm::CompletionResponse, DecisionFailure> {
+    let executable = resolve_claude_executable().ok_or_else(|| {
+        DecisionFailure::provider_unavailable("Claude Code CLI is unavailable on this machine")
+    })?;
+
+    let output = Command::new(executable)
+        .arg("--print")
+        .arg("--output-format")
+        .arg("text")
+        .arg("--permission-mode")
+        .arg("bypassPermissions")
+        .arg("--dangerously-skip-permissions")
+        .arg("--model")
+        .arg(model)
+        .arg("--append-system-prompt")
+        .arg(system_prompt)
+        .arg(user_prompt)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|error| {
+            DecisionFailure::provider_request_failed(format!(
+                "Failed to launch Claude Code CLI: {error}"
+            ))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let message = if stderr.is_empty() {
+            format!("Claude Code CLI exited with status {}", output.status)
+        } else {
+            format!("Claude Code CLI request failed: {stderr}")
+        };
+        return Err(DecisionFailure::provider_request_failed(message));
+    }
+
+    let content = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(restflow_ai::llm::CompletionResponse {
+        content: Some(content),
+        tool_calls: Vec::new(),
+        finish_reason: restflow_ai::llm::FinishReason::Stop,
+        usage: None,
+    })
+}
+
 fn build_system_prompt(game_id: &str, seat_side: &str, prompt_override: Option<&str>) -> String {
     let base = format!(
         "You are the AI player for a shared board-game session.\nGame: {game_id}\nSeat: {seat_side}\nChoose exactly one legal action.\nRespond with raw JSON only, no markdown.\nOutput schema:\n{{\"action\": <one legal action object>, \"reasoning\": {{\"summary\": string, \"reasoningSteps\": string[], \"consideredAlternatives\": [{{\"action\": string, \"summary\": string, \"rejectedBecause\"?: string}}], \"confidence\"?: number}}}}\nNever invent actions outside the provided legal moves."
@@ -708,7 +785,10 @@ where
 
 fn make_raw_response_preview(content: &str) -> String {
     let normalized = content.split_whitespace().collect::<Vec<_>>().join(" ");
-    let truncated: String = normalized.chars().take(RAW_RESPONSE_PREVIEW_LIMIT).collect();
+    let truncated: String = normalized
+        .chars()
+        .take(RAW_RESPONSE_PREVIEW_LIMIT)
+        .collect();
     if normalized.chars().count() > RAW_RESPONSE_PREVIEW_LIMIT {
         format!("{truncated}…")
     } else {
@@ -772,6 +852,18 @@ fn mask_value(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::catalog::claude_env_lock;
+    use std::os::unix::fs::PermissionsExt;
+    use uuid::Uuid;
+
+    fn write_test_claude_script(name: &str, body: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("{name}-{}.sh", Uuid::new_v4()));
+        std::fs::write(&path, body).unwrap();
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&path, permissions).unwrap();
+        path
+    }
 
     #[test]
     fn strips_code_fences() {
@@ -828,5 +920,67 @@ mod tests {
         .unwrap();
 
         assert_eq!(repaired.action, Some(json!({ "from": "e7", "to": "e5" })));
+    }
+
+    #[tokio::test]
+    async fn decide_turn_uses_claude_cli_login_session_without_token() {
+        let _lock = claude_env_lock();
+        let script = write_test_claude_script(
+            "claude-direct",
+            r#"#!/bin/sh
+expected_next_model=0
+for arg in "$@"; do
+  if [ "$expected_next_model" = "1" ]; then
+    if [ "$arg" != "sonnet" ]; then
+      echo "unexpected model: $arg" >&2
+      exit 1
+    fi
+    expected_next_model=0
+  elif [ "$arg" = "--model" ]; then
+    expected_next_model=1
+  fi
+done
+if [ "$1" = "--print" ]; then
+  echo '{"action":{"from":"e7","to":"e5"},"reasoning":{"summary":"Contest the center.","reasoningSteps":["Push the king pawn."],"consideredAlternatives":[]}}'
+  exit 0
+fi
+echo '{"loggedIn":true}'
+"#,
+        );
+        unsafe {
+            std::env::set_var("RESTFLOW_CLAUDE_BIN", &script);
+        }
+
+        let auth_path = std::env::temp_dir().join(format!("auth-{}.db", Uuid::new_v4()));
+        let auth_manager = build_auth_manager(&auth_path).await.unwrap();
+        let result = decide_turn(
+            auth_manager,
+            DecideTurnRequest {
+                game_id: "chess".to_string(),
+                session_id: "session-claude".to_string(),
+                seat_side: "black".to_string(),
+                state: json!({ "kind": "chess", "turn": "black" }),
+                legal_moves: json!([
+                    { "from": "e7", "to": "e5" },
+                    { "from": "c7", "to": "c5" }
+                ]),
+                recent_events: json!([]),
+                seat_config: SeatConfigInput {
+                    provider_profile_id: None,
+                    provider: Some("claude-code".to_string()),
+                    model: "claude-code-sonnet".to_string(),
+                    prompt_override: None,
+                    timeout_ms: Some(60_000),
+                },
+            },
+        )
+        .await;
+
+        assert_eq!(result.action, Some(json!({ "from": "e7", "to": "e5" })));
+        assert_eq!(result.error, None);
+
+        unsafe {
+            std::env::remove_var("RESTFLOW_CLAUDE_BIN");
+        }
     }
 }

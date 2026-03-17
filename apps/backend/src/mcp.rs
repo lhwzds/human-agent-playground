@@ -12,8 +12,8 @@ use rmcp::schemars::JsonSchema;
 use rmcp::service::{RequestContext, RoleServer};
 use rmcp::{ErrorData as McpError, ServerHandler};
 use schemars::JsonSchema as SchemarsJsonSchema;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 const TOOL_META_KEY: &str = "human-agent-playground/tool";
@@ -561,8 +561,15 @@ impl HumanAgentPlaygroundMcpServer {
     {
         let params: T = parse_params(args)?;
         let session_id = get_session_id(&params).to_string();
-        match self.runtime.play_move(&session_id, build_input(params)).await {
-            Ok(session) => Ok(text_result(title, serde_json::to_value(session).unwrap_or(Value::Null))),
+        match self
+            .runtime
+            .play_move(&session_id, build_input(params))
+            .await
+        {
+            Ok(session) => Ok(text_result(
+                title,
+                serde_json::to_value(session).unwrap_or(Value::Null),
+            )),
             Err(error) => Ok(error_result(error)),
         }
     }
@@ -1022,9 +1029,18 @@ fn search_tool_catalog(
     tags: &[String],
     limit: u32,
 ) -> Vec<ToolSearchResult> {
-    let normalized_query = query.map(str::trim).filter(|value| !value.is_empty()).map(str::to_lowercase);
-    let normalized_category = category.map(str::trim).filter(|value| !value.is_empty()).map(str::to_lowercase);
-    let normalized_game_id = game_id.map(str::trim).filter(|value| !value.is_empty()).map(str::to_lowercase);
+    let normalized_query = query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase);
+    let normalized_category = category
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase);
+    let normalized_game_id = game_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase);
     let normalized_tags = tags
         .iter()
         .map(|tag| tag.trim().to_lowercase())

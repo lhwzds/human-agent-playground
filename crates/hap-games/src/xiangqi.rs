@@ -6,8 +6,7 @@ use std::sync::LazyLock;
 
 use crate::GameAdapter;
 
-const STARTING_FEN: &str =
-    "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1";
+const STARTING_FEN: &str = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1";
 const FILES: &[u8; 9] = b"abcdefghi";
 const BOARD_ROWS: usize = 10;
 const BOARD_COLS: usize = 9;
@@ -78,7 +77,9 @@ static GAME: LazyLock<GameCatalogItem> = LazyLock::new(|| GameCatalogItem {
     id: "xiangqi".to_string(),
     title: "Chinese Chess".to_string(),
     short_name: "Xiangqi".to_string(),
-    description: "A 9x10 perfect-information board game with palace, river, cannon, and horse-leg rules.".to_string(),
+    description:
+        "A 9x10 perfect-information board game with palace, river, cannon, and horse-leg rules."
+            .to_string(),
     sides: vec!["red".to_string(), "black".to_string()],
 });
 
@@ -122,7 +123,9 @@ fn parse_square_query(value: &Value) -> Option<String> {
 
 fn parse_fen(fen: &str) -> Result<GameState> {
     let mut parts = fen.split_whitespace();
-    let placement = parts.next().ok_or_else(|| anyhow!("Invalid Xiangqi FEN: {fen}"))?;
+    let placement = parts
+        .next()
+        .ok_or_else(|| anyhow!("Invalid Xiangqi FEN: {fen}"))?;
     let turn_token = parts.next().unwrap_or("w");
     let rows: Vec<&str> = placement.split('/').collect();
     if rows.len() != BOARD_ROWS {
@@ -212,7 +215,11 @@ fn list_legal_moves_for_side(board: &[Vec<Option<Piece>>], side: &str) -> Result
                     side: side.to_string(),
                     piece: piece.clone(),
                     captured: simulated.captured,
-                    notation: format!("{}{}", from, coordinates_to_square(destination.0, destination.1)?),
+                    notation: format!(
+                        "{}{}",
+                        from,
+                        coordinates_to_square(destination.0, destination.1)?
+                    ),
                 });
             }
         }
@@ -226,7 +233,8 @@ fn build_game_state(
     last_move: Option<MoveRecord>,
     move_count: u32,
 ) -> Result<GameState> {
-    let general_side_missing = find_general(&board, "red").is_none() || find_general(&board, "black").is_none();
+    let general_side_missing =
+        find_general(&board, "red").is_none() || find_general(&board, "black").is_none();
     let no_moves = list_legal_moves_for_side(&board, turn)?.is_empty();
     let winner = if find_general(&board, "red").is_none() {
         Some("black".to_string())
@@ -286,7 +294,12 @@ fn make_piece(ch: char) -> Result<Piece> {
         _ => return Err(anyhow!("Unsupported Xiangqi piece: {ch}")),
     };
     Ok(Piece {
-        side: if ch.is_ascii_lowercase() { "black" } else { "red" }.to_string(),
+        side: if ch.is_ascii_lowercase() {
+            "black"
+        } else {
+            "red"
+        }
+        .to_string(),
         piece_type: piece_type.to_string(),
         fen_char: ch.to_string(),
         display: display.to_string(),
@@ -475,7 +488,10 @@ fn generate_pseudo_moves_for_piece(
             };
             if forward_row >= 0
                 && (forward_row as usize) < BOARD_ROWS
-                && !is_friendly(&get_piece(board, forward_row, origin.1 as isize), &piece.side)
+                && !is_friendly(
+                    &get_piece(board, forward_row, origin.1 as isize),
+                    &piece.side,
+                )
             {
                 moves.push((forward_row as usize, origin.1));
             }
@@ -507,11 +523,7 @@ fn scan_line_moves(
         let mut row = origin.0 as isize + row_delta;
         let mut col = origin.1 as isize + col_delta;
         let mut seen_screen = false;
-        while row >= 0
-            && col >= 0
-            && (row as usize) < BOARD_ROWS
-            && (col as usize) < BOARD_COLS
-        {
+        while row >= 0 && col >= 0 && (row as usize) < BOARD_ROWS && (col as usize) < BOARD_COLS {
             let target = get_piece(board, row, col);
             if !require_screen {
                 if target.is_none() {
@@ -551,11 +563,7 @@ fn generate_cannon_moves(
         let mut row = origin.0 as isize + row_delta;
         let mut col = origin.1 as isize + col_delta;
         let mut screen_seen = false;
-        while row >= 0
-            && col >= 0
-            && (row as usize) < BOARD_ROWS
-            && (col as usize) < BOARD_COLS
-        {
+        while row >= 0 && col >= 0 && (row as usize) < BOARD_ROWS && (col as usize) < BOARD_COLS {
             let target = get_piece(board, row, col);
             if !screen_seen {
                 if target.is_none() {

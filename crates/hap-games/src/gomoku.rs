@@ -53,12 +53,14 @@ pub(super) static ADAPTER: GomokuAdapter = GomokuAdapter;
 
 pub(super) struct GomokuAdapter;
 
-static GAME: LazyLock<GameCatalogItem> = LazyLock::new(|| GameCatalogItem {
+static GAME: LazyLock<GameCatalogItem> = LazyLock::new(|| {
+    GameCatalogItem {
     id: "gomoku".to_string(),
     title: "Gomoku".to_string(),
     short_name: "Gomoku".to_string(),
     description: "A 15x15 connection game where black and white alternate placing stones and race to make five in a row.".to_string(),
     sides: vec!["black".to_string(), "white".to_string()],
+}
 });
 
 impl GameAdapter for GomokuAdapter {
@@ -109,7 +111,9 @@ fn parse_point_query(value: &Value) -> Option<String> {
 
 fn play_move(state: &GameState, point: &str) -> Result<GameState> {
     if state.status == SessionStatus::Finished {
-        return Err(anyhow!("Cannot play a move after the Gomoku game has finished"));
+        return Err(anyhow!(
+            "Cannot play a move after the Gomoku game has finished"
+        ));
     }
 
     let (row, col) = point_to_coordinates(point)?;
@@ -243,7 +247,9 @@ fn find_winning_line(
         let mut line = collect_direction(board, row, col, side, -*row_delta, -*col_delta);
         line.reverse();
         line.push((row, col));
-        line.extend(collect_direction(board, row, col, side, *row_delta, *col_delta));
+        line.extend(collect_direction(
+            board, row, col, side, *row_delta, *col_delta,
+        ));
 
         if line.len() >= 5 {
             return line

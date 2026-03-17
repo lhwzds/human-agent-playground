@@ -3,10 +3,8 @@ use hap_models::{GameCatalogItem, SessionStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, from_value, to_value};
 use shakmaty::{
-    CastlingMode, Chess, Color, EnPassantMode, File, Move, Position, Rank, Role, Square,
-    fen::Fen,
-    san::San,
-    uci::UciMove,
+    CastlingMode, Chess, Color, EnPassantMode, File, Move, Position, Rank, Role, Square, fen::Fen,
+    san::San, uci::UciMove,
 };
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -74,12 +72,14 @@ pub(super) static ADAPTER: ChessAdapter = ChessAdapter;
 
 pub(super) struct ChessAdapter;
 
-static GAME: LazyLock<GameCatalogItem> = LazyLock::new(|| GameCatalogItem {
+static GAME: LazyLock<GameCatalogItem> = LazyLock::new(|| {
+    GameCatalogItem {
     id: "chess".to_string(),
     title: "Chess".to_string(),
     short_name: "Chess".to_string(),
     description: "An 8x8 royal strategy game where white and black maneuver pieces, deliver checkmate, and fight for the center.".to_string(),
     sides: vec!["white".to_string(), "black".to_string()],
+}
 });
 
 impl GameAdapter for ChessAdapter {
@@ -108,12 +108,21 @@ impl GameAdapter for ChessAdapter {
     fn play_move(&self, state: &Value, input: &Value) -> Result<Value> {
         let parsed: GameState = from_value(state.clone())?;
         let input: MoveInput = from_value(input.clone())?;
-        to_value(play_move(&parsed, &input.from, &input.to, input.promotion.as_deref())?)
-            .map_err(Into::into)
+        to_value(play_move(
+            &parsed,
+            &input.from,
+            &input.to,
+            input.promotion.as_deref(),
+        )?)
+        .map_err(Into::into)
     }
 }
 
-fn build_game_state(position: &Chess, last_move: Option<MoveRecord>, move_count: u32) -> Result<GameState> {
+fn build_game_state(
+    position: &Chess,
+    last_move: Option<MoveRecord>,
+    move_count: u32,
+) -> Result<GameState> {
     let outcome = position.outcome();
     let winner = match outcome.winner() {
         Some(Color::White) => Some("white".to_string()),
@@ -171,9 +180,16 @@ fn list_legal_moves(state: &GameState, from: Option<&str>) -> Result<Vec<LegalMo
         .collect())
 }
 
-fn play_move(state: &GameState, from: &str, to: &str, promotion: Option<&str>) -> Result<GameState> {
+fn play_move(
+    state: &GameState,
+    from: &str,
+    to: &str,
+    promotion: Option<&str>,
+) -> Result<GameState> {
     if state.status == SessionStatus::Finished {
-        return Err(anyhow!("Cannot play a move after the Chess game has finished"));
+        return Err(anyhow!(
+            "Cannot play a move after the Chess game has finished"
+        ));
     }
     let position = load_position(&state.fen)?;
     let from_square = parse_square(from)?;
@@ -251,7 +267,9 @@ fn create_legal_move(position: &Chess, mv: Move) -> LegalMove {
         notation: notation.clone(),
         flags: flags_for_move(mv, &notation),
         captured: mv.capture().map(role_to_piece_type).map(str::to_string),
-        promotion: promotion_from_move(mv).map(role_to_piece_type).map(str::to_string),
+        promotion: promotion_from_move(mv)
+            .map(role_to_piece_type)
+            .map(str::to_string),
     }
 }
 
@@ -397,6 +415,10 @@ mod tests {
             .list_legal_moves(&state, Some(&Value::String("e2".to_string())))
             .unwrap();
 
-        assert!(moves.iter().any(|item| item["from"] == "e2" && item["to"] == "e4"));
+        assert!(
+            moves
+                .iter()
+                .any(|item| item["from"] == "e2" && item["to"] == "e4")
+        );
     }
 }

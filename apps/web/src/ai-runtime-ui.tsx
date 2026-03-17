@@ -81,6 +81,25 @@ function providerLabel(providerId: AiRuntimeProviderId) {
   }
 }
 
+function getProviderCapabilityStatusLabel(
+  capabilityList: ProviderCapability[],
+  t: ReturnType<typeof useI18n>['t'],
+) {
+  if (capabilityList.some((provider) => provider.status === 'not_logged_in')) {
+    return t('ai.provider.notLoggedIn')
+  }
+
+  if (capabilityList.some((provider) => provider.available)) {
+    return t('ai.provider.ready')
+  }
+
+  if (capabilityList.some((provider) => provider.status.startsWith('missing_command'))) {
+    return t('ai.provider.missingCommand')
+  }
+
+  return t('ai.provider.missing')
+}
+
 function launcherLabel(t: ReturnType<typeof useI18n>['t'], launcher: AiLauncherId) {
   switch (launcher) {
     case 'human':
@@ -743,7 +762,7 @@ export function AiSettingsDialog({
                 <div className="ai-provider-card-header">
                   <strong>{providerLabel(providerId)}</strong>
                   <span className="meta-badge">
-                    {capabilityList.every((provider) => provider.available) ? t('ai.provider.ready') : t('ai.provider.missing')}
+                    {getProviderCapabilityStatusLabel(capabilityList, t)}
                   </span>
                 </div>
 

@@ -31,9 +31,7 @@ pub enum AiRuntimeProviderId {
     Gemini,
 }
 
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Hash, Default,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Hash, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AiLauncherId {
     #[default]

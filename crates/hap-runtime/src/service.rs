@@ -7,19 +7,18 @@ use crate::error::RuntimeError;
 use anyhow::Result;
 use hap_games::{get_game_adapter, list_game_catalog};
 use hap_models::{
-    AiLauncherId, AiRuntimeProviderId, AiRuntimeProviderSetting, AiRuntimeSettings,
-    AiSeatConfig, AiSeatStatus, AuthProfileSummary, CreateAuthProfileInput, CreateSessionInput,
-    DecisionExplanation, GameCatalogItem, GameSession,
-    PersistedSessions, ProviderCapability, SessionActorKind, SessionChannel, SessionEvent,
-    SessionEventKind, UpdateAiSeatInput, UpdateAiSeatLauncherInput,
-    UpdateAuthProfileInput, now_iso,
+    AiLauncherId, AiRuntimeProviderId, AiRuntimeProviderSetting, AiRuntimeSettings, AiSeatConfig,
+    AiSeatStatus, AuthProfileSummary, CreateAuthProfileInput, CreateSessionInput,
+    DecisionExplanation, GameCatalogItem, GameSession, PersistedSessions, ProviderCapability,
+    SessionActorKind, SessionChannel, SessionEvent, SessionEventKind, UpdateAiSeatInput,
+    UpdateAiSeatLauncherInput, UpdateAuthProfileInput, now_iso,
 };
 use restflow_core::auth::AuthProfileManager;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex as StdMutex;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use tokio::fs::{create_dir_all, read_to_string, write};
 use tokio::sync::{Mutex, RwLock, broadcast};
 use uuid::Uuid;
@@ -180,21 +179,24 @@ impl HumanAgentPlaygroundRuntime {
             .create_initial_state()
             .map_err(RuntimeError::internal)?;
         let timestamp = now_iso();
-        let actor = resolve_actor_context_from_create(&input, SessionActorContext {
-            actor_kind: SessionActorKind::System,
-            channel: SessionChannel::System,
-            actor_name: None,
-        });
+        let actor = resolve_actor_context_from_create(
+            &input,
+            SessionActorContext {
+                actor_kind: SessionActorKind::System,
+                channel: SessionChannel::System,
+                actor_name: None,
+            },
+        );
 
         let valid_sides = adapter.game().sides.iter().cloned().collect::<HashSet<_>>();
         let configured_launchers = input.seat_launchers.unwrap_or_default();
         for side in configured_launchers.keys() {
             if !valid_sides.contains(side) {
-                return Err(RuntimeError::bad_request(format!(
-                    "Unsupported seat side: {side}"
-                ))
-                .with_code("invalid_side")
-                .with_detail("side", side.clone()));
+                return Err(
+                    RuntimeError::bad_request(format!("Unsupported seat side: {side}"))
+                        .with_code("invalid_side")
+                        .with_detail("side", side.clone()),
+                );
             }
         }
 
@@ -250,7 +252,11 @@ impl HumanAgentPlaygroundRuntime {
         };
         let turn = read_session_turn(&session.state);
         let status = read_session_status(&session.state);
-        session.ai_seats = Some(reconcile_ai_seats(ai_seats, turn.as_deref(), status.as_deref()));
+        session.ai_seats = Some(reconcile_ai_seats(
+            ai_seats,
+            turn.as_deref(),
+            status.as_deref(),
+        ));
 
         {
             let mut state = self.state.write().await;
@@ -292,25 +298,28 @@ impl HumanAgentPlaygroundRuntime {
         let session = self.get_session(session_id).await?;
         let adapter = get_game_adapter(&session.game_id)
             .map_err(|error| RuntimeError::not_found(error.to_string()))?;
-        let actor = resolve_actor_context(&input, SessionActorContext {
-            actor_kind: SessionActorKind::Unknown,
-            channel: SessionChannel::Http,
-            actor_name: None,
-        });
+        let actor = resolve_actor_context(
+            &input,
+            SessionActorContext {
+                actor_kind: SessionActorKind::Unknown,
+                channel: SessionChannel::Http,
+                actor_name: None,
+            },
+        );
         let reasoning = parse_decision_explanation(&input)?;
         validate_agent_move_explanation(&actor, reasoning.as_ref())?;
 
         let next_state = adapter
             .play_move(&session.state, &input)
             .map_err(|error| RuntimeError::bad_request(error.to_string()))?;
-        let move_details = merge_detail_maps(&parse_move_event_details(&next_state), &parse_ai_runtime_event_details(&input));
+        let move_details = merge_detail_maps(
+            &parse_move_event_details(&next_state),
+            &parse_ai_runtime_event_details(&input),
+        );
         let timestamp = now_iso();
         let turn = read_session_turn(&next_state);
         let status = read_session_status(&next_state);
-        let current_ai_seats = normalize_ai_seats(
-            &adapter.game().sides,
-            session.ai_seats.as_ref(),
-        );
+        let current_ai_seats = normalize_ai_seats(&adapter.game().sides, session.ai_seats.as_ref());
 
         let updated = GameSession {
             id: session.id.clone(),
@@ -337,7 +346,9 @@ impl HumanAgentPlaygroundRuntime {
 
         {
             let mut state = self.state.write().await;
-            state.sessions.insert(session_id.to_string(), updated.clone());
+            state
+                .sessions
+                .insert(session_id.to_string(), updated.clone());
         }
         self.persist().await.map_err(RuntimeError::internal)?;
         self.emit_session_update(&updated).await;
@@ -353,11 +364,14 @@ impl HumanAgentPlaygroundRuntime {
         let session = self.get_session(session_id).await?;
         let adapter = get_game_adapter(&session.game_id)
             .map_err(|error| RuntimeError::not_found(error.to_string()))?;
-        let actor = resolve_actor_context(&input, SessionActorContext {
-            actor_kind: SessionActorKind::Unknown,
-            channel: SessionChannel::Http,
-            actor_name: None,
-        });
+        let actor = resolve_actor_context(
+            &input,
+            SessionActorContext {
+                actor_kind: SessionActorKind::Unknown,
+                channel: SessionChannel::Http,
+                actor_name: None,
+            },
+        );
         let timestamp = now_iso();
         let state = adapter
             .create_initial_state()
@@ -389,7 +403,9 @@ impl HumanAgentPlaygroundRuntime {
 
         {
             let mut state = self.state.write().await;
-            state.sessions.insert(session_id.to_string(), updated.clone());
+            state
+                .sessions
+                .insert(session_id.to_string(), updated.clone());
         }
         self.persist().await.map_err(RuntimeError::internal)?;
         self.emit_session_update(&updated).await;
@@ -424,11 +440,9 @@ impl HumanAgentPlaygroundRuntime {
     ) -> Result<WaitForTurnResult, RuntimeError> {
         let timeout_ms = timeout_ms.unwrap_or(60_000);
         let mut latest_session = self.get_session(session_id).await?;
-        if let Some(result) = resolve_wait_for_turn_result(
-            latest_session.clone(),
-            expected_turn,
-            after_event_id,
-        ) {
+        if let Some(result) =
+            resolve_wait_for_turn_result(latest_session.clone(), expected_turn, after_event_id)
+        {
             return Ok(result);
         }
 
@@ -510,7 +524,9 @@ impl HumanAgentPlaygroundRuntime {
         })
     }
 
-    pub async fn list_provider_capabilities(&self) -> Result<Vec<ProviderCapability>, RuntimeError> {
+    pub async fn list_provider_capabilities(
+        &self,
+    ) -> Result<Vec<ProviderCapability>, RuntimeError> {
         Ok(list_provider_capabilities())
     }
 
@@ -596,17 +612,26 @@ impl HumanAgentPlaygroundRuntime {
         let session = self.get_session(session_id).await?;
         let adapter = get_game_adapter(&session.game_id)
             .map_err(|error| RuntimeError::not_found(error.to_string()))?;
-        if !adapter.game().sides.iter().any(|candidate| candidate == side) {
+        if !adapter
+            .game()
+            .sides
+            .iter()
+            .any(|candidate| candidate == side)
+        {
             return Err(RuntimeError::bad_request(format!(
                 "Unsupported seat side: {side}"
             )));
         }
 
-        let mut current_seats = normalize_ai_seats(&adapter.game().sides, session.ai_seats.as_ref());
-        let seat = current_seats.get(side).cloned().unwrap_or_else(|| AiSeatConfig {
-            side: side.to_string(),
-            ..AiSeatConfig::default()
-        });
+        let mut current_seats =
+            normalize_ai_seats(&adapter.game().sides, session.ai_seats.as_ref());
+        let seat = current_seats
+            .get(side)
+            .cloned()
+            .unwrap_or_else(|| AiSeatConfig {
+                side: side.to_string(),
+                ..AiSeatConfig::default()
+            });
         let merged = AiSeatConfig {
             side: side.to_string(),
             launcher: input.launcher.unwrap_or(seat.launcher),
@@ -644,7 +669,9 @@ impl HumanAgentPlaygroundRuntime {
         };
         {
             let mut state = self.state.write().await;
-            state.sessions.insert(session_id.to_string(), updated.clone());
+            state
+                .sessions
+                .insert(session_id.to_string(), updated.clone());
         }
         self.persist().await.map_err(RuntimeError::internal)?;
         self.emit_session_update(&updated).await;
@@ -661,15 +688,21 @@ impl HumanAgentPlaygroundRuntime {
         let session = self.get_session(session_id).await?;
         let adapter = get_game_adapter(&session.game_id)
             .map_err(|error| RuntimeError::not_found(error.to_string()))?;
-        if !adapter.game().sides.iter().any(|candidate| candidate == side) {
-            return Err(RuntimeError::bad_request(format!(
-                "Unsupported seat side: {side}"
-            ))
-            .with_code("invalid_side")
-            .with_detail("side", side.to_string()));
+        if !adapter
+            .game()
+            .sides
+            .iter()
+            .any(|candidate| candidate == side)
+        {
+            return Err(
+                RuntimeError::bad_request(format!("Unsupported seat side: {side}"))
+                    .with_code("invalid_side")
+                    .with_detail("side", side.to_string()),
+            );
         }
 
-        let mut current_seats = normalize_ai_seats(&adapter.game().sides, session.ai_seats.as_ref());
+        let mut current_seats =
+            normalize_ai_seats(&adapter.game().sides, session.ai_seats.as_ref());
         if input.launcher == AiLauncherId::Human {
             current_seats.insert(
                 side.to_string(),
@@ -724,7 +757,9 @@ impl HumanAgentPlaygroundRuntime {
         };
         {
             let mut state = self.state.write().await;
-            state.sessions.insert(session_id.to_string(), updated.clone());
+            state
+                .sessions
+                .insert(session_id.to_string(), updated.clone());
         }
         self.persist().await.map_err(RuntimeError::internal)?;
         self.emit_session_update(&updated).await;
@@ -893,7 +928,10 @@ impl HumanAgentPlaygroundRuntime {
 
         let run_key = format!("{}:{turn}", session.id);
         {
-            let mut active = self.active_seat_runs.lock().expect("active seat runs lock poisoned");
+            let mut active = self
+                .active_seat_runs
+                .lock()
+                .expect("active seat runs lock poisoned");
             if active.contains(&run_key) {
                 return;
             }
@@ -1181,13 +1219,13 @@ impl HumanAgentPlaygroundRuntime {
     {
         let updated = {
             let mut state = self.state.write().await;
-            let latest = state
-                .sessions
-                .get(session_id)
-                .cloned()
-                .ok_or_else(|| RuntimeError::not_found(format!("Session not found: {session_id}")))?;
+            let latest = state.sessions.get(session_id).cloned().ok_or_else(|| {
+                RuntimeError::not_found(format!("Session not found: {session_id}"))
+            })?;
             let updated = updater(&latest)?;
-            state.sessions.insert(session_id.to_string(), updated.clone());
+            state
+                .sessions
+                .insert(session_id.to_string(), updated.clone());
             updated
         };
         self.persist().await.map_err(RuntimeError::internal)?;
@@ -1208,7 +1246,9 @@ impl HumanAgentPlaygroundRuntime {
         let setting = settings
             .providers
             .iter()
-            .find(|candidate| candidate.provider_id == runtime_provider_id_for_launcher(input.launcher))
+            .find(|candidate| {
+                candidate.provider_id == runtime_provider_id_for_launcher(input.launcher)
+            })
             .cloned();
         let timeout_ms = input
             .advanced
@@ -1231,17 +1271,19 @@ impl HumanAgentPlaygroundRuntime {
                 let requested_model = input
                     .model
                     .clone()
-                    .or_else(|| setting.as_ref().and_then(|value| value.default_model.clone()))
+                    .or_else(|| {
+                        setting
+                            .as_ref()
+                            .and_then(|value| value.default_model.clone())
+                    })
                     .or_else(|| allowed_models.first().map(|model| model.id.clone()));
 
                 let Some(requested_model) = requested_model else {
-                    return Err(
-                        RuntimeError::bad_request(format!(
-                            "No model is configured for launcher {:?}",
-                            input.launcher
-                        ))
-                        .with_code("config_missing")
-                    );
+                    return Err(RuntimeError::bad_request(format!(
+                        "No model is configured for launcher {:?}",
+                        input.launcher
+                    ))
+                    .with_code("config_missing"));
                 };
 
                 let selected_model = allowed_models
@@ -1278,7 +1320,11 @@ impl HumanAgentPlaygroundRuntime {
                     .advanced
                     .as_ref()
                     .and_then(|advanced| advanced.provider_profile_id.clone())
-                    .or_else(|| setting.as_ref().and_then(|value| value.default_profile_id.clone()));
+                    .or_else(|| {
+                        setting
+                            .as_ref()
+                            .and_then(|value| value.default_profile_id.clone())
+                    });
 
                 let Some(profile_id) = profile_id else {
                     return Err(RuntimeError::bad_request(format!(
@@ -1336,32 +1382,63 @@ impl HumanAgentPlaygroundRuntime {
             }
             AiLauncherId::ClaudeCode => {
                 let (model, provider) = resolve_model(&["claude-code"])?;
-                if !provider.as_ref().is_some_and(|provider| provider.available) {
+                let Some(provider) = provider else {
+                    return Err(RuntimeError::bad_request(
+                        "Claude Code is unavailable on this machine",
+                    )
+                    .with_code("cli_unavailable"));
+                };
+
+                if provider.available {
+                    return Ok(ResolvedLauncherSeatConfig {
+                        launcher: input.launcher,
+                        model,
+                        provider_profile_id: None,
+                        prompt_override: input
+                            .advanced
+                            .and_then(|advanced| advanced.prompt_override),
+                        timeout_ms,
+                        auto_play,
+                    });
+                }
+
+                if provider.status == "not_logged_in" {
+                    return Err(RuntimeError::bad_request(
+                        "Claude Code is installed, but you are not signed in. Please sign in with `claude auth login` first.",
+                    )
+                    .with_code("config_missing")
+                    .with_detail("launcher", "claude-code"));
+                }
+
+                if provider.status.starts_with("missing_command") {
                     return Err(RuntimeError::bad_request(
                         "Claude Code is unavailable on this machine",
                     )
                     .with_code("cli_unavailable"));
                 }
 
-                Ok(ResolvedLauncherSeatConfig {
-                    launcher: input.launcher,
-                    model,
-                    provider_profile_id: None,
-                    prompt_override: input.advanced.and_then(|advanced| advanced.prompt_override),
-                    timeout_ms,
-                    auto_play,
-                })
+                Err(
+                    RuntimeError::bad_request("Claude Code is unavailable on this machine")
+                        .with_code("test_failed"),
+                )
             }
             AiLauncherId::Gemini => {
-                let preferred_source =
-                    setting.as_ref().and_then(|value| value.preferred_source.clone());
+                let preferred_source = setting
+                    .as_ref()
+                    .and_then(|value| value.preferred_source.clone());
                 let profile_id = input
                     .advanced
                     .as_ref()
                     .and_then(|advanced| advanced.provider_profile_id.clone())
-                    .or_else(|| setting.as_ref().and_then(|value| value.default_profile_id.clone()));
+                    .or_else(|| {
+                        setting
+                            .as_ref()
+                            .and_then(|value| value.default_profile_id.clone())
+                    });
                 let google_provider = providers.iter().find(|candidate| candidate.id == "google");
-                let cli_provider = providers.iter().find(|candidate| candidate.id == "gemini-cli");
+                let cli_provider = providers
+                    .iter()
+                    .find(|candidate| candidate.id == "gemini-cli");
                 let should_use_cli = preferred_source.as_deref() == Some("cli")
                     || (profile_id.is_none()
                         && preferred_source.as_deref() != Some("api")
@@ -1380,7 +1457,9 @@ impl HumanAgentPlaygroundRuntime {
                         launcher: input.launcher,
                         model,
                         provider_profile_id: None,
-                        prompt_override: input.advanced.and_then(|advanced| advanced.prompt_override),
+                        prompt_override: input
+                            .advanced
+                            .and_then(|advanced| advanced.prompt_override),
                         timeout_ms,
                         auto_play,
                     });
@@ -1393,12 +1472,16 @@ impl HumanAgentPlaygroundRuntime {
                 let profile = profiles.iter().find(|candidate| candidate.id == profile_id);
                 if !matches!(profile, Some(profile) if profile.enabled && profile.health != "disabled")
                 {
-                    return Err(RuntimeError::bad_request("Gemini API profile is unavailable")
-                        .with_code("test_failed"));
+                    return Err(
+                        RuntimeError::bad_request("Gemini API profile is unavailable")
+                            .with_code("test_failed"),
+                    );
                 }
                 if !google_provider.is_some_and(|provider| provider.available) {
-                    return Err(RuntimeError::bad_request("Gemini API provider is unavailable")
-                        .with_code("test_failed"));
+                    return Err(
+                        RuntimeError::bad_request("Gemini API provider is unavailable")
+                            .with_code("test_failed"),
+                    );
                 }
 
                 let (model, _provider) = resolve_model(&["google"])?;
@@ -1419,18 +1502,17 @@ impl HumanAgentPlaygroundRuntime {
 }
 
 fn default_session_data_path() -> PathBuf {
-    Path::new(".")
-        .join(std::env::var("HUMAN_AGENT_PLAYGROUND_DATA_PATH").unwrap_or_else(|_| {
-            ".human-agent-playground-data/sessions.json".to_string()
-        }))
+    Path::new(".").join(
+        std::env::var("HUMAN_AGENT_PLAYGROUND_DATA_PATH")
+            .unwrap_or_else(|_| ".human-agent-playground-data/sessions.json".to_string()),
+    )
 }
 
 fn default_auth_data_path() -> PathBuf {
-    Path::new(".")
-        .join(
-            std::env::var("HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_DATA_PATH")
-                .unwrap_or_else(|_| ".board-bridge-data/restflow.db".to_string()),
-        )
+    Path::new(".").join(
+        std::env::var("HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_DATA_PATH")
+            .unwrap_or_else(|_| ".board-bridge-data/restflow.db".to_string()),
+    )
 }
 
 fn build_default_ai_runtime_settings() -> AiRuntimeSettings {
@@ -1490,17 +1572,19 @@ fn normalize_ai_runtime_settings(raw: Option<AiRuntimeSettings>) -> AiRuntimeSet
         AiRuntimeProviderId::ClaudeCode,
         AiRuntimeProviderId::Gemini,
     ] {
-        by_id.entry(provider_id).or_insert_with(|| AiRuntimeProviderSetting {
-            provider_id,
-            display_name: None,
-            default_model: None,
-            default_profile_id: None,
-            preferred_source: if provider_id == AiRuntimeProviderId::Gemini {
-                Some("api".to_string())
-            } else {
-                None
-            },
-        });
+        by_id
+            .entry(provider_id)
+            .or_insert_with(|| AiRuntimeProviderSetting {
+                provider_id,
+                display_name: None,
+                default_model: None,
+                default_profile_id: None,
+                preferred_source: if provider_id == AiRuntimeProviderId::Gemini {
+                    Some("api".to_string())
+                } else {
+                    None
+                },
+            });
     }
 
     AiRuntimeSettings {
@@ -1518,7 +1602,8 @@ fn normalize_ai_runtime_settings(raw: Option<AiRuntimeSettings>) -> AiRuntimeSet
 }
 
 fn build_default_ai_seats(sides: &[String]) -> HashMap<String, AiSeatConfig> {
-    sides.iter()
+    sides
+        .iter()
         .map(|side| {
             (
                 side.clone(),
@@ -1545,7 +1630,8 @@ fn normalize_ai_seats(
     raw_ai_seats: Option<&HashMap<String, AiSeatConfig>>,
 ) -> HashMap<String, AiSeatConfig> {
     let defaults = build_default_ai_seats(sides);
-    sides.iter()
+    sides
+        .iter()
         .map(|side| {
             let raw = raw_ai_seats.and_then(|value| value.get(side)).cloned();
             let mut seat = raw.unwrap_or_else(|| defaults.get(side).cloned().unwrap_or_default());
@@ -1563,7 +1649,8 @@ fn reconcile_ai_seats(
     ai_seats
         .into_iter()
         .map(|(side, seat)| {
-            let next_seat = if !seat.enabled || seat.model.as_deref().unwrap_or_default().is_empty()
+            let next_seat = if !seat.enabled
+                || seat.model.as_deref().unwrap_or_default().is_empty()
                 || status == Some("finished")
             {
                 AiSeatConfig {
@@ -1740,9 +1827,15 @@ fn validate_agent_move_explanation(
 
 fn parse_ai_runtime_event_details(input: &Value) -> HashMap<String, Value> {
     map_from_pairs([
-        ("provider", input.get("provider").cloned().unwrap_or(Value::Null)),
+        (
+            "provider",
+            input.get("provider").cloned().unwrap_or(Value::Null),
+        ),
         ("model", input.get("model").cloned().unwrap_or(Value::Null)),
-        ("seatSide", input.get("seatSide").cloned().unwrap_or(Value::Null)),
+        (
+            "seatSide",
+            input.get("seatSide").cloned().unwrap_or(Value::Null),
+        ),
         (
             "runtimeSource",
             input.get("runtimeSource").cloned().unwrap_or(Value::Null),
@@ -1755,12 +1848,24 @@ fn parse_move_event_details(state: &Value) -> HashMap<String, Value> {
         return HashMap::new();
     };
     map_from_pairs([
-        ("column", last_move.get("column").cloned().unwrap_or(Value::Null)),
+        (
+            "column",
+            last_move.get("column").cloned().unwrap_or(Value::Null),
+        ),
         ("row", last_move.get("row").cloned().unwrap_or(Value::Null)),
-        ("point", last_move.get("point").cloned().unwrap_or(Value::Null)),
-        ("from", last_move.get("from").cloned().unwrap_or(Value::Null)),
+        (
+            "point",
+            last_move.get("point").cloned().unwrap_or(Value::Null),
+        ),
+        (
+            "from",
+            last_move.get("from").cloned().unwrap_or(Value::Null),
+        ),
         ("to", last_move.get("to").cloned().unwrap_or(Value::Null)),
-        ("side", last_move.get("side").cloned().unwrap_or(Value::Null)),
+        (
+            "side",
+            last_move.get("side").cloned().unwrap_or(Value::Null),
+        ),
         (
             "notation",
             last_move.get("notation").cloned().unwrap_or(Value::Null),
@@ -1964,7 +2069,9 @@ fn build_ai_seat_signature(seat: Option<&AiSeatConfig>) -> String {
 
 fn includes_legal_action(legal_moves: &[Value], action: &Value) -> bool {
     let target = stable_json(action);
-    legal_moves.iter().any(|candidate| stable_json(candidate) == target)
+    legal_moves
+        .iter()
+        .any(|candidate| stable_json(candidate) == target)
 }
 
 fn map_bridge_decision_failure(decision: &DecideTurnResult) -> AiSeatFailure {
@@ -2024,31 +2131,32 @@ fn stable_json(value: &Value) -> String {
     match value {
         Value::Array(values) => format!(
             "[{}]",
-            values
-                .iter()
-                .map(stable_json)
+            values.iter().map(stable_json).collect::<Vec<_>>().join(",")
+        ),
+        Value::Object(map) => format!("{{{}}}", {
+            let mut entries = map.iter().collect::<Vec<_>>();
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            entries
+                .into_iter()
+                .map(|(key, nested)| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(key).unwrap_or_default(),
+                        stable_json(nested)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(",")
-        ),
-        Value::Object(map) => format!(
-            "{{{}}}",
-            {
-                let mut entries = map.iter().collect::<Vec<_>>();
-                entries.sort_by(|(left, _), (right, _)| left.cmp(right));
-                entries
-                    .into_iter()
-                    .map(|(key, nested)| format!("{}:{}", serde_json::to_string(key).unwrap_or_default(), stable_json(nested)))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            }
-        ),
+        }),
         _ => serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
     }
 }
 
 fn normalize_ai_runtime_action(value: &Value) -> Value {
     match value {
-        Value::Array(values) => Value::Array(values.iter().map(normalize_ai_runtime_action).collect()),
+        Value::Array(values) => {
+            Value::Array(values.iter().map(normalize_ai_runtime_action).collect())
+        }
         Value::Object(map) => Value::Object(
             map.iter()
                 .filter(|(_, value)| !value.is_null())
@@ -2134,6 +2242,8 @@ fn map_from_pairs<const N: usize>(pairs: [(&str, Value); N]) -> HashMap<String, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::catalog::claude_env_lock;
+    use std::os::unix::fs::PermissionsExt;
 
     fn temp_runtime_config(name: &str) -> RuntimeConfig {
         let unique = format!("{}-{}", name, Uuid::new_v4());
@@ -2142,6 +2252,15 @@ mod tests {
             session_data_path: root.join("sessions.json"),
             auth_data_path: root.join("restflow.db"),
         }
+    }
+
+    fn write_test_claude_script(name: &str, body: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("{name}-{}.sh", Uuid::new_v4()));
+        std::fs::write(&path, body).unwrap();
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&path, permissions).unwrap();
+        path
     }
 
     #[tokio::test]
@@ -2159,7 +2278,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(session.game_id, "gomoku");
-        assert_eq!(runtime.get_session(&session.id).await.unwrap().id, session.id);
+        assert_eq!(
+            runtime.get_session(&session.id).await.unwrap().id,
+            session.id
+        );
         assert_eq!(runtime.list_sessions().await.unwrap().len(), 1);
     }
 
@@ -2208,5 +2330,59 @@ mod tests {
                 .and_then(|provider| provider.preferred_source.as_deref()),
             Some("cli")
         );
+    }
+
+    #[tokio::test]
+    async fn returns_config_missing_when_claude_code_is_not_logged_in() {
+        let _lock = claude_env_lock();
+        let script = write_test_claude_script(
+            "claude-not-logged-in",
+            r#"#!/bin/sh
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  echo '{"loggedIn":false}'
+  exit 0
+fi
+exit 1
+"#,
+        );
+        unsafe {
+            std::env::set_var("RESTFLOW_CLAUDE_BIN", &script);
+        }
+
+        let runtime = HumanAgentPlaygroundRuntime::new(temp_runtime_config("claude-login-state"))
+            .await
+            .unwrap();
+        let session = runtime
+            .create_session(CreateSessionInput {
+                game_id: "chess".to_string(),
+                ..CreateSessionInput::default()
+            })
+            .await
+            .unwrap();
+
+        let error = runtime
+            .update_ai_seat_launcher(
+                &session.id,
+                "black",
+                UpdateAiSeatLauncherInput {
+                    launcher: AiLauncherId::ClaudeCode,
+                    model: Some("claude-code-sonnet".to_string()),
+                    auto_play: Some(true),
+                    advanced: None,
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code(), Some("config_missing"));
+        assert!(
+            error
+                .message()
+                .contains("Claude Code is installed, but you are not signed in")
+        );
+
+        unsafe {
+            std::env::remove_var("RESTFLOW_CLAUDE_BIN");
+        }
     }
 }

@@ -57,12 +57,14 @@ pub(super) static ADAPTER: ConnectFourAdapter = ConnectFourAdapter;
 
 pub(super) struct ConnectFourAdapter;
 
-static GAME: LazyLock<GameCatalogItem> = LazyLock::new(|| GameCatalogItem {
+static GAME: LazyLock<GameCatalogItem> = LazyLock::new(|| {
+    GameCatalogItem {
     id: "connect-four".to_string(),
     title: "Connect Four".to_string(),
     short_name: "Connect Four".to_string(),
     description: "A vertical 7x6 connection game where red and yellow drop discs into columns and race to connect four.".to_string(),
     sides: vec!["red".to_string(), "yellow".to_string()],
+}
 });
 
 impl GameAdapter for ConnectFourAdapter {
@@ -229,7 +231,9 @@ fn find_winning_line(
         let mut line = collect_direction(board, row, col, side, -*row_delta, -*col_delta);
         line.reverse();
         line.push((row, col));
-        line.extend(collect_direction(board, row, col, side, *row_delta, *col_delta));
+        line.extend(collect_direction(
+            board, row, col, side, *row_delta, *col_delta,
+        ));
         if line.len() >= 4 {
             return line
                 .into_iter()

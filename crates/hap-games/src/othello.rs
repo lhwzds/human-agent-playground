@@ -65,12 +65,14 @@ pub(super) static ADAPTER: OthelloAdapter = OthelloAdapter;
 
 pub(super) struct OthelloAdapter;
 
-static GAME: LazyLock<GameCatalogItem> = LazyLock::new(|| GameCatalogItem {
+static GAME: LazyLock<GameCatalogItem> = LazyLock::new(|| {
+    GameCatalogItem {
     id: "othello".to_string(),
     title: "Othello".to_string(),
     short_name: "Othello".to_string(),
     description: "An 8x8 disk-flipping game where black and white bracket opposing discs and control the final board count.".to_string(),
     sides: vec!["black".to_string(), "white".to_string()],
+}
 });
 
 impl GameAdapter for OthelloAdapter {
@@ -126,7 +128,9 @@ fn list_legal_moves(state: &GameState, point: Option<&str>) -> Result<Vec<LegalM
     }
 
     if let Some(point) = point {
-        return Ok(collect_legal_move(&state.board, point, &state.turn)?.into_iter().collect());
+        return Ok(collect_legal_move(&state.board, point, &state.turn)?
+            .into_iter()
+            .collect());
     }
 
     let mut moves = Vec::new();
@@ -143,7 +147,9 @@ fn list_legal_moves(state: &GameState, point: Option<&str>) -> Result<Vec<LegalM
 
 fn play_move(state: &GameState, point: &str) -> Result<GameState> {
     if state.status == SessionStatus::Finished {
-        return Err(anyhow!("Cannot play a move after the Othello game has finished"));
+        return Err(anyhow!(
+            "Cannot play a move after the Othello game has finished"
+        ));
     }
 
     let legal = collect_legal_move(&state.board, point, &state.turn)?
@@ -233,14 +239,20 @@ fn all_legal_moves(board: &[Vec<Option<Disc>>], side: &str) -> Result<Vec<LegalM
     Ok(moves)
 }
 
-fn collect_legal_move(board: &[Vec<Option<Disc>>], point: &str, side: &str) -> Result<Option<LegalMove>> {
+fn collect_legal_move(
+    board: &[Vec<Option<Disc>>],
+    point: &str,
+    side: &str,
+) -> Result<Option<LegalMove>> {
     let (row, col) = point_to_coordinates(point)?;
     if board[row][col].is_some() {
         return Ok(None);
     }
     let mut flips = Vec::new();
     for (row_delta, col_delta) in DIRECTIONS {
-        flips.extend(collect_direction_flips(board, row, col, side, *row_delta, *col_delta)?);
+        flips.extend(collect_direction_flips(
+            board, row, col, side, *row_delta, *col_delta,
+        )?);
     }
     if flips.is_empty() {
         Ok(None)

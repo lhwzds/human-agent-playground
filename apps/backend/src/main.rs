@@ -7,11 +7,11 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
-use futures::stream::once;
 use futures::StreamExt;
+use futures::stream::once;
 use hap_models::{
-    AiRuntimeSettings, CreateAuthProfileInput, CreateSessionInput, GameSession,
-    SessionStreamEvent, UpdateAiSeatInput, UpdateAiSeatLauncherInput, UpdateAuthProfileInput,
+    AiRuntimeSettings, CreateAuthProfileInput, CreateSessionInput, GameSession, SessionStreamEvent,
+    UpdateAiSeatInput, UpdateAiSeatLauncherInput, UpdateAuthProfileInput,
 };
 use hap_runtime::{HumanAgentPlaygroundRuntime, RuntimeConfig, RuntimeError};
 use serde_json::{Value, json};
@@ -180,9 +180,8 @@ async fn handle_stream_session(
         }
     });
 
-    Ok(Sse::new(initial.chain(updates)).keep_alive(KeepAlive::new().interval(
-        std::time::Duration::from_secs(15),
-    )))
+    Ok(Sse::new(initial.chain(updates))
+        .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15))))
 }
 
 async fn handle_get_legal_moves(
@@ -200,7 +199,10 @@ async fn handle_get_legal_moves(
                 .collect(),
         ))
     };
-    let moves = state.runtime.get_legal_moves(&session_id, query_value).await?;
+    let moves = state
+        .runtime
+        .get_legal_moves(&session_id, query_value)
+        .await?;
     Ok(Json(json!({ "moves": moves })))
 }
 
@@ -253,7 +255,10 @@ async fn handle_update_auth_profile(
     Path(profile_id): Path<String>,
     Json(input): Json<UpdateAuthProfileInput>,
 ) -> Result<Json<Value>, ApiError> {
-    let (id, name, enabled, priority) = state.runtime.update_auth_profile(&profile_id, input).await?;
+    let (id, name, enabled, priority) = state
+        .runtime
+        .update_auth_profile(&profile_id, input)
+        .await?;
     Ok(Json(json!({
         "id": id,
         "name": name,
@@ -310,7 +315,10 @@ async fn handle_update_ai_seat(
     Path((session_id, side)): Path<(String, String)>,
     Json(input): Json<UpdateAiSeatInput>,
 ) -> Result<Json<Value>, ApiError> {
-    let session = state.runtime.update_ai_seat(&session_id, &side, input).await?;
+    let session = state
+        .runtime
+        .update_ai_seat(&session_id, &side, input)
+        .await?;
     Ok(Json(serde_json::to_value(session).unwrap_or(Value::Null)))
 }
 
@@ -343,10 +351,13 @@ impl From<RuntimeError> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let status = StatusCode::from_u16(self.0.status_code())
-            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let status =
+            StatusCode::from_u16(self.0.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         let mut body = serde_json::Map::new();
-        body.insert("error".to_string(), Value::String(self.0.message().to_string()));
+        body.insert(
+            "error".to_string(),
+            Value::String(self.0.message().to_string()),
+        );
         if let Some(code) = self.0.code() {
             body.insert("code".to_string(), Value::String(code.to_string()));
         }
@@ -362,9 +373,9 @@ mod tests {
     use super::build_app;
     use anyhow::Result;
     use hap_runtime::{HumanAgentPlaygroundRuntime, RuntimeConfig};
+    use rmcp::ServiceExt;
     use rmcp::model::CallToolRequestParams;
     use rmcp::transport::StreamableHttpClientTransport;
-    use rmcp::ServiceExt;
     use serde_json::{Value, json};
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -397,12 +408,17 @@ mod tests {
             let _ = axum::serve(listener, app).await;
         });
 
-        let transport =
-            StreamableHttpClientTransport::from_uri(format!("http://127.0.0.1:{}/mcp", address.port()));
+        let transport = StreamableHttpClientTransport::from_uri(format!(
+            "http://127.0.0.1:{}/mcp",
+            address.port()
+        ));
         let client = ().serve(transport).await?;
 
         let tools = client.list_all_tools().await?;
-        let names = tools.iter().map(|tool| tool.name.as_ref()).collect::<Vec<_>>();
+        let names = tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>();
         assert!(names.contains(&"list_games"));
         assert!(names.contains(&"search_tools"));
         assert!(names.contains(&"get_game_state"));
@@ -469,7 +485,10 @@ mod tests {
             .and_then(|value| value.get("payload"))
             .cloned()
             .expect("tool payload");
-        assert_eq!(payload.get("status").and_then(Value::as_str), Some("timeout"));
+        assert_eq!(
+            payload.get("status").and_then(Value::as_str),
+            Some("timeout")
+        );
         assert_eq!(
             payload
                 .get("playedSession")
