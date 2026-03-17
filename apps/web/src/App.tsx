@@ -140,12 +140,16 @@ function upsertSessionCollection(current: GameSession[], nextSession: GameSessio
   return sortSessionsByUpdatedAt([merged, ...remaining])
 }
 
+function resolvePreferredGameId(availableGames: GameCatalogItem[]) {
+  return availableGames.find((game) => game.id === 'chess')?.id ?? availableGames[0]?.id ?? 'xiangqi'
+}
+
 function loadBootstrapPayload(): Promise<BootstrapPayload> {
   if (!bootstrapPromise) {
     bootstrapPromise = (async () => {
       const availableGames = await listGames()
       const existing = sortSessionsByUpdatedAt(await listSessions())
-      const defaultGameId = availableGames[0]?.id ?? 'xiangqi'
+      const defaultGameId = resolvePreferredGameId(availableGames)
       const session =
         existing[0] ??
         (await createSession({
@@ -546,7 +550,8 @@ function AppContent() {
   const [createSeatLauncherDrafts, setCreateSeatLauncherDrafts] = useState<
     Record<string, SeatLauncherDraft>
   >({})
-  const [selectedGameId, setSelectedGameId] = useState('xiangqi')
+  const [selectedGameId, setSelectedGameId] = useState('chess')
+  const [createSessionGameId, setCreateSessionGameId] = useState('chess')
   const [syncState, setSyncState] = useState<LiveSyncState>('offline')
   const [error, setError] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string | null>(null)
@@ -601,6 +606,7 @@ function AppContent() {
           setGames(availableGames)
           setSessions(existingSessions)
           setSelectedGameId(active.gameId)
+          setCreateSessionGameId(resolvePreferredGameId(availableGames))
           setSession(active)
         }
       } catch (nextError) {
@@ -655,7 +661,7 @@ function AppContent() {
       return
     }
 
-    const selectedGame = games.find((candidate) => candidate.id === selectedGameId)
+    const selectedGame = games.find((candidate) => candidate.id === createSessionGameId)
     if (!selectedGame) {
       setCreateSeatLauncherDrafts({})
       return
@@ -671,7 +677,7 @@ function AppContent() {
         current,
       ),
     )
-  }, [createSessionOpen, games, providers, runtimeSettings, selectedGameId])
+  }, [createSessionOpen, createSessionGameId, games, providers, runtimeSettings])
 
   async function refreshSession(sessionId: string) {
     const [latest, latestSessions] = await Promise.all([getSession(sessionId), listSessions()])
@@ -716,8 +722,10 @@ function AppContent() {
   }
 
   function handleOpenCreateSession() {
-    const selectedGame = games.find((candidate) => candidate.id === selectedGameId)
+    const nextGameId = games.length > 0 ? resolvePreferredGameId(games) : createSessionGameId
+    const selectedGame = games.find((candidate) => candidate.id === nextGameId)
     setPlayerDialogError(null)
+    setCreateSessionGameId(nextGameId)
     setCreateSeatLauncherDrafts(
       selectedGame
         ? buildSeatLauncherDraftMapForSides(resolveGameSides(selectedGame), providers, runtimeSettings)
@@ -727,7 +735,7 @@ function AppContent() {
   }
 
   async function handleCreateSession() {
-    const selectedGame = games.find((candidate) => candidate.id === selectedGameId)
+    const selectedGame = games.find((candidate) => candidate.id === createSessionGameId)
     if (!selectedGame) {
       return
     }
@@ -938,6 +946,18 @@ function AppContent() {
               : providerId
 
       const capability = providers.find((provider) => provider.id === capabilityId)
+      if (capability?.status === 'not_logged_in') {
+        throw new RequestError(
+          t('ai.notice.cliNotLoggedIn', {
+            provider: getRuntimeProviderLabel(t, providerId),
+          }),
+          'config_missing',
+          {
+            providerId,
+          },
+        )
+      }
+
       if (!capability?.available) {
         throw new RequestError(`${providerId} is unavailable on this machine.`, 'cli_unavailable', {
           providerId,
@@ -1293,9 +1313,9 @@ function AppContent() {
       <SeatLauncherDialog
         open={createSessionOpen}
         mode="create"
-        game={games.find((candidate) => candidate.id === selectedGameId)}
+        game={games.find((candidate) => candidate.id === createSessionGameId)}
         games={games}
-        selectedGameId={selectedGameId}
+        selectedGameId={createSessionGameId}
         providers={providers}
         settings={runtimeSettings}
         drafts={createSeatLauncherDrafts}
@@ -1308,7 +1328,7 @@ function AppContent() {
         onSubmit={handleCreateSession}
         onDraftChange={handleCreateSeatLauncherDraftChange}
         onGameChange={(gameId) => {
-          setSelectedGameId(gameId)
+          setCreateSessionGameId(gameId)
           setPlayerDialogError(null)
         }}
       />

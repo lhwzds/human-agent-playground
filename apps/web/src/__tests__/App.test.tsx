@@ -130,6 +130,22 @@ function createAiRuntimePayload() {
           },
         ],
       },
+      {
+        id: 'claude-code',
+        label: 'Claude Code',
+        kind: 'cli',
+        available: true,
+        status: 'ready',
+        authProviders: [],
+        models: [
+          {
+            id: 'claude-code-sonnet',
+            label: 'Claude Code Sonnet',
+            provider: 'claude-code',
+            supportsTemperature: false,
+          },
+        ],
+      },
     ],
     profiles: [
       {
@@ -155,6 +171,154 @@ describe('App', () => {
     vi.mocked(saveAiRuntimeSettings).mockImplementation(async (settings) => settings)
     resetLanguagePreferenceForTests()
     resetBootstrapCacheForTests()
+  })
+
+  it('prefers chess when bootstrapping a new default session', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'xiangqi',
+        title: 'Chinese Chess',
+        shortName: 'Xiangqi',
+        description: 'Chinese chess session.',
+        sides: ['red', 'black'],
+      },
+      {
+        id: 'chess',
+        title: 'Chess',
+        shortName: 'Chess',
+        description: 'Chess session.',
+        sides: ['white', 'black'],
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([])
+    vi.mocked(createSession).mockResolvedValue({
+      id: 'session-chess-default',
+      gameId: 'chess',
+      createdAt: '2026-03-07T00:00:00.000Z',
+      updatedAt: '2026-03-07T00:00:00.000Z',
+      aiSeats: {
+        white: {
+          side: 'white',
+          launcher: 'human',
+          enabled: false,
+          autoPlay: false,
+          model: '',
+          providerProfileId: '',
+          promptOverride: null,
+          timeoutMs: 60000,
+          status: 'idle',
+          lastError: null,
+          runtimeSource: null,
+        },
+        black: {
+          side: 'black',
+          launcher: 'human',
+          enabled: false,
+          autoPlay: false,
+          model: '',
+          providerProfileId: '',
+          promptOverride: null,
+          timeoutMs: 60000,
+          status: 'idle',
+          lastError: null,
+          runtimeSource: null,
+        },
+      },
+      events: [],
+      state: {
+        kind: 'chess',
+        turn: 'white',
+        status: 'active',
+        winner: null,
+        isCheck: false,
+        lastMove: null,
+        board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({ gameId: 'chess' })
+      expect(screen.getByText('Turn: white')).toBeInTheDocument()
+    })
+  })
+
+  it('defaults the create-session dialog to chess when it is available', async () => {
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'xiangqi',
+        title: 'Chinese Chess',
+        shortName: 'Xiangqi',
+        description: 'Chinese chess session.',
+        sides: ['red', 'black'],
+      },
+      {
+        id: 'chess',
+        title: 'Chess',
+        shortName: 'Chess',
+        description: 'Chess session.',
+        sides: ['white', 'black'],
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([])
+    vi.mocked(createSession).mockResolvedValue({
+      id: 'session-chess-default',
+      gameId: 'chess',
+      createdAt: '2026-03-07T00:00:00.000Z',
+      updatedAt: '2026-03-07T00:00:00.000Z',
+      aiSeats: {
+        white: {
+          side: 'white',
+          launcher: 'human',
+          enabled: false,
+          autoPlay: false,
+          model: '',
+          providerProfileId: '',
+          promptOverride: null,
+          timeoutMs: 60000,
+          status: 'idle',
+          lastError: null,
+          runtimeSource: null,
+        },
+        black: {
+          side: 'black',
+          launcher: 'human',
+          enabled: false,
+          autoPlay: false,
+          model: '',
+          providerProfileId: '',
+          promptOverride: null,
+          timeoutMs: 60000,
+          status: 'idle',
+          lastError: null,
+          runtimeSource: null,
+        },
+      },
+      events: [],
+      state: {
+        kind: 'chess',
+        turn: 'white',
+        status: 'active',
+        winner: null,
+        isCheck: false,
+        lastMove: null,
+        board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Create Session' })).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Create Session' }).click()
+    })
+
+    const dialog = screen.getByRole('dialog', { name: 'Create Session' })
+    expect(within(dialog).getByRole('combobox', { name: 'Game' })).toHaveValue('chess')
   })
 
   it('applies live session updates from the session stream', async () => {
@@ -1661,6 +1825,101 @@ describe('App', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Saved settings for Codex CLI.')).toBeInTheDocument()
+    })
+  })
+
+  it('shows a clear Claude Code login warning when the CLI is installed but not signed in', async () => {
+    vi.mocked(getAiRuntimeSettings).mockResolvedValue({
+      ...createAiRuntimePayload(),
+      providers: createAiRuntimePayload().providers.map((provider) =>
+        provider.id === 'claude-code'
+          ? {
+              ...provider,
+              available: false,
+              status: 'not_logged_in',
+            }
+          : provider,
+      ),
+    })
+    vi.mocked(listGames).mockResolvedValue([
+      {
+        id: 'chess',
+        title: 'Chess',
+        shortName: 'Chess',
+        description: 'Chess session.',
+        sides: ['white', 'black'],
+      },
+    ])
+    vi.mocked(listSessions).mockResolvedValue([
+      {
+        id: 'session-chess-ai',
+        gameId: 'chess',
+        createdAt: '2026-03-07T00:00:00.000Z',
+        updatedAt: '2026-03-07T00:00:00.000Z',
+        aiSeats: {
+          white: {
+            side: 'white',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+          black: {
+            side: 'black',
+            launcher: 'human',
+            enabled: false,
+            autoPlay: false,
+            model: '',
+            providerProfileId: '',
+            promptOverride: null,
+            timeoutMs: 60000,
+            status: 'idle',
+            lastError: null,
+            runtimeSource: null,
+          },
+        },
+        events: [],
+        state: {
+          kind: 'chess',
+          turn: 'white',
+          status: 'active',
+          winner: null,
+          isCheck: false,
+          lastMove: null,
+          board: Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => null)),
+        },
+      },
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'AI Settings' })).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'AI Settings' }).click()
+    })
+
+    const dialog = await screen.findByRole('dialog')
+    const claudeCard = within(dialog).getByText('Claude Code').closest('.ai-settings-provider-card')
+    expect(claudeCard).not.toBeNull()
+    expect(within(claudeCard as HTMLElement).getByText('not signed in')).toBeInTheDocument()
+
+    await act(async () => {
+      within(claudeCard as HTMLElement).getByRole('button', { name: 'Test' }).click()
+    })
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Claude Code is installed, but you are not signed in yet.'),
+      ).toBeInTheDocument()
     })
   })
 })
