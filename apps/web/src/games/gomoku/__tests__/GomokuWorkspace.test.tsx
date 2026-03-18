@@ -153,13 +153,24 @@ describe('GomokuWorkspace', () => {
     )
 
     const messageFeedCard = screen.getByRole('heading', { name: 'Message Feed' }).closest('.panel-card')
+    const reasoningDetails = messageFeedCard?.querySelector('.reasoning-summary')
 
     expect(messageFeedCard).not.toBeNull()
+    expect(reasoningDetails).not.toBeNull()
+    expect(reasoningDetails).not.toHaveAttribute('open')
     expect(within(messageFeedCard as HTMLElement).getByText('Session Created')).toBeInTheDocument()
     expect(within(messageFeedCard as HTMLElement).getByText('i8')).toBeInTheDocument()
     expect(within(messageFeedCard as HTMLElement).getByText('Reasoning Summary')).toBeInTheDocument()
-    expect(within(messageFeedCard as HTMLElement).getByText('Extend the central row while keeping both ends flexible.')).toBeInTheDocument()
     expect(within(messageFeedCard as HTMLElement).getAllByText('Placed ●')).toHaveLength(2)
     expect(container.querySelector('[data-point="i8"]')).toHaveClass('gomoku-point-last')
+
+    fireEvent.click(within(messageFeedCard as HTMLElement).getByText('Reasoning Summary'))
+
+    expect(reasoningDetails).toHaveAttribute('open')
+    expect(
+      within(messageFeedCard as HTMLElement).getByText(
+        'The horizontal extension creates a stronger line than remote side points.',
+      ),
+    ).toBeInTheDocument()
   })
 })

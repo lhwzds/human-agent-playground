@@ -1,22 +1,15 @@
-import type {
-  DecisionExplanation,
-  GameSession,
-  SessionEvent,
-} from '@human-agent-playground/core'
+import type { GameSession } from '@human-agent-playground/core'
 import type {
   ChessGameState,
   ChessSquare,
 } from '@human-agent-playground/game-chess'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
-  formatActorLabel,
-  formatEventHeadline,
-  formatRuntimeMeta,
-  formatEventSummary,
-  formatTimestamp,
+  type AppLanguage,
   useI18n,
 } from '../../i18n'
+import { ActivityFeed } from '../shared/ActivityFeed'
 import type { GameWorkspaceProps } from '../types'
 import { getChessLegalMoves, playChessMove } from './api'
 import { ChessBoard } from './components/ChessBoard'
@@ -39,57 +32,17 @@ export function ChessWorkspace({
   onSessionUpdate,
   onError,
   gameOverDialog,
+  sideRailHeader,
   setupPanel,
 }: GameWorkspaceProps) {
   const { t } = useI18n()
   const session = toChessSession(rawSession)
   const [selectedSquare, setSelectedSquare] = useState<ChessSquare | null>(null)
   const [legalTargets, setLegalTargets] = useState<Set<ChessSquare>>(new Set())
-  const [feedHeight, setFeedHeight] = useState<number | null>(null)
-  const boardPanelRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     setSelectedSquare(null)
     setLegalTargets(new Set())
-  }, [session.id, session.updatedAt])
-
-  useEffect(() => {
-    const boardPanel = boardPanelRef.current
-    const boardShell = boardPanel?.querySelector<HTMLElement>('.board-shell')
-
-    if (!boardPanel || !boardShell) {
-      return
-    }
-
-    const updateFeedHeight = () => {
-      if (window.innerWidth <= 1080) {
-        setFeedHeight(null)
-        return
-      }
-
-      const boardPanelStyles = window.getComputedStyle(boardPanel)
-      const verticalChrome =
-        Number.parseFloat(boardPanelStyles.paddingTop) +
-        Number.parseFloat(boardPanelStyles.paddingBottom) +
-        Number.parseFloat(boardPanelStyles.borderTopWidth) +
-        Number.parseFloat(boardPanelStyles.borderBottomWidth)
-
-      setFeedHeight(boardShell.getBoundingClientRect().height + verticalChrome)
-    }
-
-    updateFeedHeight()
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateFeedHeight()
-    })
-
-    resizeObserver.observe(boardShell)
-    window.addEventListener('resize', updateFeedHeight)
-
-    return () => {
-      resizeObserver.disconnect()
-      window.removeEventListener('resize', updateFeedHeight)
-    }
   }, [session.id, session.updatedAt])
 
   async function selectSquare(square: ChessSquare) {
@@ -147,7 +100,7 @@ export function ChessWorkspace({
 
   return (
     <div className="game-workspace-layout">
-      <article ref={boardPanelRef} className="board-panel">
+      <article className="board-panel">
         <ChessBoard
           board={session.state.board}
           selectedSquare={selectedSquare}
@@ -159,89 +112,21 @@ export function ChessWorkspace({
         {gameOverDialog}
       </article>
 
-      <aside className="side-panel" style={feedHeight ? { height: `${feedHeight}px` } : undefined}>
-        <div className="panel-card panel-card-feed">
-          <h2>{t('feed.title')}</h2>
-          {sessionEvents.length === 0 && !setupPanel ? (
-            <p>{t('feed.empty')}</p>
-          ) : (
-            <ol className="message-feed-list">
-              {sessionEvents.map((event) => (
-                <MessageFeedItem key={event.id} event={event} gameId={session.gameId} />
-              ))}
-              {setupPanel}
-            </ol>
-          )}
-        </div>
+      <aside className="side-panel">
+        {sideRailHeader ? <div className="panel-card panel-card-side-rail">{sideRailHeader}</div> : null}
+        <ActivityFeed
+          gameId={session.gameId}
+          events={sessionEvents}
+          emptyText={t('feed.empty')}
+          pendingItem={setupPanel}
+          renderMoveDetails={formatMoveDetails}
+        />
       </aside>
     </div>
   )
 }
 
-function MessageFeedItem({ event, gameId }: { event: SessionEvent; gameId: string }) {
-  const { language } = useI18n()
-  const moveDetails = event.kind === 'move_played' ? formatMoveDetails(language, event) : ''
-  const runtimeMeta = formatRuntimeMeta(language, event)
-
-  return (
-    <li className={`message-feed-item message-feed-item-${event.actorKind}`}>
-      <article className="message-feed-bubble">
-        <p className="message-feed-meta">
-          {formatActorLabel(language, event)} · {formatTimestamp(language, event.createdAt)}
-        </p>
-        <strong>{formatEventHeadline(language, event)}</strong>
-        <p className="message-feed-summary">{formatEventSummary(language, event, gameId)}</p>
-        {moveDetails ? <p className="message-feed-summary">{moveDetails}</p> : null}
-        {runtimeMeta ? <p className="message-feed-summary">{runtimeMeta}</p> : null}
-        {event.reasoning ? <ReasoningSummary explanation={event.reasoning} compact /> : null}
-      </article>
-    </li>
-  )
-}
-
-function ReasoningSummary({
-  explanation,
-  compact = false,
-}: {
-  explanation: DecisionExplanation
-  compact?: boolean
-}) {
-  const { t } = useI18n()
-
-  return (
-    <div className={`reasoning-summary ${compact ? 'reasoning-summary-compact' : ''}`}>
-      <p className="reasoning-summary-title">{t('feed.reasoningSummary')}</p>
-      <p>{explanation.summary}</p>
-
-      {explanation.reasoningSteps.length > 0 && (
-        <ul className="reasoning-list">
-          {explanation.reasoningSteps.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ul>
-      )}
-
-      {explanation.consideredAlternatives.length > 0 && (
-        <ul className="reasoning-list">
-          {explanation.consideredAlternatives.map((alternative) => (
-            <li key={`${alternative.action}:${alternative.summary}`}>
-              {alternative.action}: {alternative.summary}
-              {alternative.rejectedBecause ? ` (${alternative.rejectedBecause})` : ''}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {typeof explanation.confidence === 'number' && (
-        <p className="reasoning-confidence">
-          {t('feed.confidence', { value: explanation.confidence.toFixed(2) })}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function formatMoveDetails(language: 'en' | 'zh-CN', event: SessionEvent) {
+function formatMoveDetails(language: AppLanguage, event: GameSession['events'][number]) {
   const details: string[] = []
 
   if (typeof event.details.san === 'string') {

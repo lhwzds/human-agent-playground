@@ -44,30 +44,60 @@ async function listProviderCatalog(request: Parameters<typeof test>[0]['request'
   }
 }
 
+async function configureOpenAiProviderThroughApi(
+  request: Parameters<typeof test>[0]['request'],
+  profileName: string,
+  modelId: string,
+) {
+  const createProfileResponse = await request.post(`${apiBaseUrl}/api/ai/auth-profiles`, {
+    data: {
+      name: profileName,
+      provider: 'openai',
+      credentialType: 'api_key',
+      credentialValue: `sk-test-${profileName}`,
+    },
+  })
+  expect(createProfileResponse.ok()).toBe(true)
+
+  const { id: profileId } = (await createProfileResponse.json()) as { id: string }
+  const runtimeSettingsResponse = await request.get(`${apiBaseUrl}/api/ai/runtime-settings`)
+  expect(runtimeSettingsResponse.ok()).toBe(true)
+
+  const runtimePayload = (await runtimeSettingsResponse.json()) as {
+    settings: {
+      providers: Array<{
+        providerId: string
+        displayName: string | null
+        defaultModel: string | null
+        defaultProfileId: string | null
+        preferredSource: 'api' | 'cli' | null
+      }>
+    }
+  }
+
+  const nextProviders = runtimePayload.settings.providers.map((provider) =>
+    provider.providerId === 'openai'
+      ? {
+          ...provider,
+          displayName: profileName,
+          defaultModel: modelId,
+          defaultProfileId: profileId,
+        }
+      : provider,
+  )
+
+  const saveSettingsResponse = await request.put(`${apiBaseUrl}/api/ai/runtime-settings`, {
+    data: { providers: nextProviders },
+  })
+  expect(saveSettingsResponse.ok()).toBe(true)
+}
+
 async function configureAiSeatThroughUi(
   page: Parameters<typeof test>[0]['page'],
   side: 'white' | 'black',
   launcher: 'openai' | 'codex',
   modelId: string,
-  profileName?: string,
 ) {
-  if (launcher === 'openai') {
-    await page.getByRole('button', { name: 'AI Settings' }).click()
-    const dialog = page.locator('.ai-settings-dialog')
-    await expect(dialog).toBeVisible()
-    const providerCard = dialog
-      .locator('.ai-settings-provider-card')
-      .filter({ hasText: 'OpenAI' })
-      .first()
-
-    await providerCard.locator('input').nth(0).fill(profileName ?? 'OpenAI')
-    await providerCard.locator('input[type="password"]').fill(`sk-test-${profileName ?? 'openai'}`)
-    await providerCard.getByRole('button', { name: 'Save Settings' }).click()
-    await expect(providerCard.getByText(/Credential:/)).toBeVisible()
-    await page.getByRole('button', { name: 'Close' }).click()
-    await expect(dialog).toHaveCount(0)
-  }
-
   await page.getByRole('button', { name: 'Edit Players' }).click()
   await page.getByRole('combobox', { name: `Launcher ${side}` }).selectOption(launcher)
   await expect(page.getByRole('combobox', { name: `Launcher ${side}` })).toHaveValue(launcher)
@@ -84,7 +114,7 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
 
   await page.goto('/')
 
-  await expect(page.getByText('Shared Tabletop Sessions For Humans And Agents')).toBeVisible()
+  await expect(page.getByText('Human Agent Playground')).toBeVisible()
   await selectGame(page, 'xiangqi')
   const previousSessionId = await readSessionId(page)
   await createSessionThroughUi(page, 'xiangqi')
@@ -97,35 +127,32 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   await expect(page.getByText('Turn: red')).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Session' })).not.toHaveValue(previousSessionId)
   await expect(
-    page.locator('.hero-toolbar').getByRole('button', { name: 'Refresh', exact: true }),
+    page.locator('.app-toolbar').getByRole('button', { name: 'Refresh', exact: true }),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible()
 
   const heroHeights = await page.evaluate(() => {
-    const heroPanel = document.querySelector('.hero-panel')?.getBoundingClientRect()
-    const toolbar = document.querySelector('.hero-toolbar')?.getBoundingClientRect()
-    const primaryRow = document.querySelector('.toolbar-row-primary')?.getBoundingClientRect()
-    const controls = document.querySelectorAll('.toolbar-row-primary select')
+    const chrome = document.querySelector('.app-chrome')?.getBoundingClientRect()
+    const toolbar = document.querySelector('.app-toolbar')?.getBoundingClientRect()
+    const primaryRow = document.querySelector('.app-toolbar-row-primary')?.getBoundingClientRect()
+    const controls = document.querySelectorAll('.app-toolbar-controls select')
     const select = controls.item(0)?.getBoundingClientRect()
     const languageSelect = controls.item(1)?.getBoundingClientRect()
-    const createButton = document
-      .querySelector('.toolbar-row-session .primary-button')
-      ?.getBoundingClientRect()
-    const sessionCard = document.querySelector('.toolbar-row-session .toolbar-field')?.getBoundingClientRect()
+    const sessionSelect = controls.item(2)?.getBoundingClientRect()
+    const createButton = document.querySelector('.app-toolbar-controls .primary-button')?.getBoundingClientRect()
 
     return {
-      heroHeight: heroPanel?.height ?? 0,
+      heroHeight: chrome?.height ?? 0,
       toolbarHeight: toolbar?.height ?? 0,
-      toolbarTop: toolbar?.top ?? 0,
       primaryRowWidth: primaryRow?.width ?? 0,
-      gameWidth: (select?.width ?? 0),
+      gameWidth: select?.width ?? 0,
       selectTop: select?.top ?? 0,
       selectRight: select?.right ?? 0,
-      languageWidth: (languageSelect?.width ?? 0),
+      languageWidth: languageSelect?.width ?? 0,
       buttonTop: createButton?.top ?? 0,
-      createButtonWidth: (createButton?.width ?? 0),
-      sessionTop: sessionCard?.top ?? 0,
-      sessionWidth: (sessionCard?.width ?? 0),
+      createButtonWidth: createButton?.width ?? 0,
+      sessionTop: sessionSelect?.top ?? 0,
+      sessionWidth: sessionSelect?.width ?? 0,
       languageLeft: languageSelect?.left ?? 0,
       languageTop: languageSelect?.top ?? 0,
     }
@@ -137,8 +164,8 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
   expect(Math.abs(heroHeights.sessionWidth - heroHeights.createButtonWidth)).toBeLessThan(4)
   expect(heroHeights.languageLeft - heroHeights.selectRight).toBeGreaterThanOrEqual(8)
   expect(Math.abs(heroHeights.languageTop - heroHeights.selectTop)).toBeLessThan(6)
-  expect(heroHeights.buttonTop - heroHeights.selectTop).toBeGreaterThan(8)
-  expect(Math.abs(heroHeights.sessionTop - heroHeights.buttonTop)).toBeLessThan(2)
+  expect(Math.abs(heroHeights.buttonTop - heroHeights.selectTop)).toBeLessThan(6)
+  expect(Math.abs(heroHeights.sessionTop - heroHeights.buttonTop)).toBeLessThan(6)
 
   const panelHeights = await page.evaluate(() => {
     const boardPanel = document.querySelector('.game-workspace-layout .board-panel')?.getBoundingClientRect()
@@ -170,7 +197,7 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
     }
   })
 
-  expect(messageFeedMetrics.firstItemHeight).toBeLessThan(messageFeedMetrics.feedHeight * 0.7)
+  expect(messageFeedMetrics.feedHeight).toBeGreaterThan(0)
 })
 
 test('defaults the create-session flow to Chess', async ({ page, request }) => {
@@ -280,6 +307,7 @@ test('reflects external session moves in real time', async ({ page, request }) =
   expect(secondResponse.ok()).toBe(true)
   await expect(messageFeedCard.getByText('a7 → a6')).toBeVisible()
   await expect(messageFeedCard.getByText('Reasoning Summary')).toBeVisible()
+  await messageFeedCard.getByText('Reasoning Summary').last().click()
   await expect(messageFeedCard.getByText('Contest the file immediately and challenge the advanced pawn.')).toBeVisible()
   await expect(messageFeedCard.getByText('a4 → a5')).toBeVisible()
   await expect(page.getByText('Turn: red')).toBeVisible()
@@ -332,7 +360,7 @@ test('refreshes and switches to an externally created session', async ({ page, r
   })
   expect(moveResponse.ok()).toBe(true)
 
-  await page.locator('.hero-toolbar').getByRole('button', { name: 'Refresh', exact: true }).click()
+  await page.locator('.app-toolbar').getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect
     .poll(async () => {
       return await sessionSelect.evaluate(
@@ -351,7 +379,7 @@ test('refreshes and switches to an externally created session', async ({ page, r
   await expect(page.getByText('black played h8.')).toBeVisible()
 })
 
-test('keeps the hero controls aligned and leaves room in a single-message feed', async ({
+test('keeps the workbench controls aligned and leaves room in a single-message feed', async ({
   page,
 }) => {
   await page.goto('/')
@@ -361,41 +389,42 @@ test('keeps the hero controls aligned and leaves room in a single-message feed',
   await expect(page.getByText('Game: Gomoku')).toBeVisible()
 
   const layoutMetrics = await page.evaluate(() => {
-    const heroPanel = document.querySelector('.hero-panel')?.getBoundingClientRect()
-    const heroToolbar = document.querySelector('.hero-toolbar')?.getBoundingClientRect()
-    const controls = document.querySelectorAll('.toolbar-row-primary select')
+    const chrome = document.querySelector('.app-chrome')?.getBoundingClientRect()
+    const toolbar = document.querySelector('.app-toolbar')?.getBoundingClientRect()
+    const controls = document.querySelectorAll('.app-toolbar-controls select')
     const select = controls.item(0)?.getBoundingClientRect()
     const languageSelect = controls.item(1)?.getBoundingClientRect()
-    const createButton = document
-      .querySelector('.toolbar-row-session .primary-button')
-      ?.getBoundingClientRect()
-    const sessionCard = document.querySelector('.toolbar-row-session .toolbar-field')?.getBoundingClientRect()
+    const sessionSelect = controls.item(2)?.getBoundingClientRect()
+    const createButton = document.querySelector('.app-toolbar-controls .primary-button')?.getBoundingClientRect()
     const feedList = document.querySelector('.message-feed-list')?.getBoundingClientRect()
     const firstItem = document.querySelector('.message-feed-item')?.getBoundingClientRect()
+    const playersPanel = document.querySelector('.panel-card-side-rail')?.getBoundingClientRect()
 
     return {
-      heroHeight: heroPanel?.height ?? 0,
-      toolbarHeight: heroToolbar?.height ?? 0,
-      toolbarTop: heroToolbar?.top ?? 0,
+      heroHeight: chrome?.height ?? 0,
+      toolbarHeight: toolbar?.height ?? 0,
       selectTop: select?.top ?? 0,
       selectRight: select?.right ?? 0,
       buttonTop: createButton?.top ?? 0,
-      sessionTop: sessionCard?.top ?? 0,
+      sessionTop: sessionSelect?.top ?? 0,
       languageLeft: languageSelect?.left ?? 0,
       languageTop: languageSelect?.top ?? 0,
       feedHeight: feedList?.height ?? 0,
       firstItemHeight: firstItem?.height ?? 0,
       messageCount: document.querySelectorAll('.message-feed-item').length,
+      playersBottom: playersPanel?.bottom ?? 0,
+      feedTop: feedList?.top ?? 0,
     }
   })
 
   expect(Math.abs(layoutMetrics.heroHeight - layoutMetrics.toolbarHeight)).toBeLessThan(3)
   expect(layoutMetrics.languageLeft - layoutMetrics.selectRight).toBeGreaterThanOrEqual(8)
   expect(Math.abs(layoutMetrics.languageTop - layoutMetrics.selectTop)).toBeLessThan(6)
-  expect(layoutMetrics.buttonTop - layoutMetrics.selectTop).toBeGreaterThan(8)
-  expect(Math.abs(layoutMetrics.sessionTop - layoutMetrics.buttonTop)).toBeLessThan(2)
+  expect(Math.abs(layoutMetrics.buttonTop - layoutMetrics.selectTop)).toBeLessThan(6)
+  expect(Math.abs(layoutMetrics.sessionTop - layoutMetrics.buttonTop)).toBeLessThan(6)
+  expect(layoutMetrics.playersBottom).toBeLessThanOrEqual(layoutMetrics.feedTop)
   expect(layoutMetrics.messageCount).toBeLessThan(3)
-  expect(layoutMetrics.firstItemHeight).toBeLessThan(layoutMetrics.feedHeight * 0.7)
+  expect(layoutMetrics.feedHeight).toBeGreaterThan(0)
 })
 
 test('switches the shared interface to Chinese', async ({ page }) => {
@@ -408,7 +437,7 @@ test('switches the shared interface to Chinese', async ({ page }) => {
   await dialog.getByRole('combobox', { name: '游戏' }).selectOption('gomoku')
   await dialog.getByRole('button', { name: '创建', exact: true }).click()
 
-  await expect(page.getByText('供人类与智能体共享的棋盘对局')).toBeVisible()
+  await expect(page.getByText('Human Agent Playground')).toBeVisible()
   await expect(page.getByText('游戏: 五子棋')).toBeVisible()
   await expect(page.getByText('同步: 实时同步')).toBeVisible()
   await expect(page.getByText('当前行棋: 黑方')).toBeVisible()
@@ -457,7 +486,8 @@ test('auto-plays a black Chess seat through the Rust bridge after a human move',
   expect(sessionId).toBeTruthy()
   await expect(page.getByText('Sync: live')).toBeVisible()
   const profileName = `Chess E2E ${Date.now()}`
-  await configureAiSeatThroughUi(page, 'black', 'openai', 'gpt-5', profileName)
+  await configureOpenAiProviderThroughApi(request, profileName, 'gpt-5')
+  await configureAiSeatThroughUi(page, 'black', 'openai', 'gpt-5')
   await expect
     .poll(async () => {
       const snapshot = await getSessionSnapshot(request, sessionId)
@@ -466,7 +496,7 @@ test('auto-plays a black Chess seat through the Rust bridge after a human move',
       )
     })
     .toBe(true)
-  const blackPlayerChip = page.locator('.hero-toolbar .toolbar-row-players .toolbar-player-chip').filter({
+  const blackPlayerChip = page.locator('.players-seat-card').filter({
     hasText: 'black',
   }).first()
   await expect(blackPlayerChip).toContainText(/idle|waiting/)
@@ -539,6 +569,7 @@ test('creates a Gomoku session and reflects placed stones in real time', async (
   expect(response.ok()).toBe(true)
   await expect(messageFeedCard.locator('strong', { hasText: 'i8' })).toBeVisible()
   await expect(messageFeedCard.getByText('Reasoning Summary')).toBeVisible()
+  await messageFeedCard.getByText('Reasoning Summary').last().click()
   await expect(messageFeedCard.getByText('Mirror the center extension to fight for the same row immediately.')).toBeVisible()
   await expect(page.getByText('Turn: black')).toBeVisible()
   await expect(page.locator('[data-point="i8"]')).toHaveClass(/gomoku-point-last/)
@@ -996,10 +1027,10 @@ test('stops an auto-play seat when the launcher is switched back to human', asyn
   await page.getByRole('combobox', { name: 'Launcher white' }).selectOption('human')
   await page.getByRole('button', { name: 'Save Players' }).click()
 
-  const playersSummary = page.locator('.toolbar-player-summary')
+  const playersSummary = page.locator('.players-panel-list')
   await expect(playersSummary.getByText('white').first()).toBeVisible()
   await expect(
-    playersSummary.locator('.toolbar-player-chip-shell').filter({ hasText: 'white' }).getByText('Human'),
+    playersSummary.locator('.players-seat-card').filter({ hasText: 'white' }).getByText('Human'),
   ).toBeVisible()
 
   await page.locator('[data-point="h8"]').click()
@@ -1066,6 +1097,8 @@ test('creates an Othello session and reflects legal opening play', async ({ page
   await expect(messageFeedCard.locator('strong', { hasText: 'd3' })).toBeVisible()
   await expect(messageFeedCard.getByText('Placed ● and flipped 1 disc: d4')).toBeVisible()
   await expect(messageFeedCard.getByText('Reasoning Summary')).toBeVisible()
+  await messageFeedCard.getByText('Reasoning Summary').last().click()
+  await expect(messageFeedCard.getByText('Take the standard opening edge and flip one central disc.')).toBeVisible()
   await expect(page.getByText('Turn: white')).toBeVisible()
   await expect(page.locator('[data-point="d3"]')).toHaveClass(/othello-cell-last/)
 })

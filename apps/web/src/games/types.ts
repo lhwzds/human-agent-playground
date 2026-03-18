@@ -13,6 +13,7 @@ export interface GameWorkspaceProps {
   error: string | null
   onSessionUpdate: (session: GameSession) => void
   gameOverDialog?: ReactNode
+  sideRailHeader?: ReactNode
   setupPanel?: ReactNode
   onRefreshSession?: (sessionId: string) => Promise<GameSession>
   onResetSession?: (sessionId: string) => Promise<GameSession>

@@ -720,20 +720,20 @@ describe('App', () => {
       expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument()
     })
 
-    const heroPanel = document.querySelector('.hero-panel')
-    const heroToolbar = document.querySelector('.hero-toolbar')
-    const primaryRow = document.querySelector('.toolbar-row-primary')
-    const sessionRow = document.querySelector('.toolbar-row-session')
-    const toolbarActions = document.querySelector('.toolbar-row-actions')
+    const appChrome = document.querySelector('.app-chrome')
+    const appToolbar = document.querySelector('.app-toolbar')
+    const primaryRow = document.querySelector('.app-toolbar-row-primary')
+    const secondaryRow = document.querySelector('.app-toolbar-row-secondary')
+    const toolbarControls = document.querySelector('.app-toolbar-controls')
+    const toolbarActions = document.querySelector('.app-toolbar-actions')
 
-    expect(heroPanel).not.toBeNull()
-    expect(heroToolbar).not.toBeNull()
-    expect(heroPanel?.contains(heroToolbar ?? null)).toBe(true)
-    expect(primaryRow?.querySelector('select')).not.toBeNull()
-    expect(primaryRow?.querySelectorAll('select')).toHaveLength(2)
-    expect(primaryRow?.querySelector('.primary-button')).toBeNull()
-    expect(sessionRow?.querySelector('select')).not.toBeNull()
-    expect(sessionRow?.querySelector('.primary-button')).not.toBeNull()
+    expect(appChrome).not.toBeNull()
+    expect(appToolbar).not.toBeNull()
+    expect(appChrome?.contains(appToolbar ?? null)).toBe(true)
+    expect(primaryRow?.querySelector('.app-brand')).not.toBeNull()
+    expect(toolbarControls?.querySelectorAll('select')).toHaveLength(3)
+    expect(toolbarControls?.querySelector('.primary-button')).not.toBeNull()
+    expect(secondaryRow?.querySelector('.status-strip')).not.toBeNull()
     expect(toolbarActions?.querySelectorAll('button')).toHaveLength(3)
 
     await act(async () => {
@@ -805,7 +805,7 @@ describe('App', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText('供人类与智能体共享的棋盘对局')).toBeInTheDocument()
+      expect(screen.getByText('Human Agent Playground')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: '创建对局' })).toBeInTheDocument()
       expect(screen.getByText('游戏: 五子棋')).toBeInTheDocument()
       expect(screen.getByText('当前行棋: 黑方')).toBeInTheDocument()
@@ -1036,10 +1036,11 @@ describe('App', () => {
       expect(screen.getByText('white')).toBeInTheDocument()
       expect(screen.getByText('OpenAI API')).toBeInTheDocument()
       expect(screen.getByText('waiting')).toBeInTheDocument()
-      expect(screen.getByLabelText('Players')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Players' })).toBeInTheDocument()
+      expect(screen.getByRole('list', { name: 'Players' })).toBeInTheDocument()
     })
 
-    expect(screen.getByText('waiting').closest('.toolbar-player-chip')).toHaveClass('is-waiting')
+    expect(screen.getByText('waiting').closest('.players-seat-card')).toHaveClass('is-waiting')
 
     await act(async () => {
       screen.getByRole('button', { name: 'AI Settings' }).click()
@@ -1355,8 +1356,8 @@ describe('App', () => {
         .getByText('black · Codex CLI is thinking…')
         .closest('.message-feed-item-pending')
       expect(pendingMessage).not.toBeNull()
-      const toolbar = screen.getByRole('toolbar', { name: 'Session controls' })
-      expect(within(toolbar).getByText('thinking').closest('.toolbar-player-chip')).toHaveClass('is-thinking')
+      const playersList = screen.getByRole('list', { name: 'Players' })
+      expect(within(playersList).getByText('thinking').closest('.players-seat-card')).toHaveClass('is-thinking')
     })
 
     act(() => {

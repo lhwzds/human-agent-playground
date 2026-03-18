@@ -21,7 +21,7 @@ export function XiangqiBoard({
   onSquareClick,
 }: XiangqiBoardProps) {
   return (
-    <div className="board-shell">
+    <div className="board-shell xiangqi-board-shell">
       <div className="board-layout">
         <div className="board-corner-spacer" aria-hidden="true" />
         <div className="board-top-spacer" aria-hidden="true" />

@@ -183,15 +183,22 @@ describe('ChessWorkspace', () => {
     )
 
     const messageFeedCard = screen.getByRole('heading', { name: 'Message Feed' }).closest('.panel-card')
+    const reasoningDetails = messageFeedCard?.querySelector('.reasoning-summary')
 
     expect(messageFeedCard).not.toBeNull()
+    expect(reasoningDetails).not.toBeNull()
+    expect(reasoningDetails).not.toHaveAttribute('open')
     expect(within(messageFeedCard as HTMLElement).getByText('e2 → e4')).toBeInTheDocument()
     expect(within(messageFeedCard as HTMLElement).getByText('Reasoning Summary')).toBeInTheDocument()
-    expect(
-      within(messageFeedCard as HTMLElement).getByText('Occupy the center and open lines for the bishop and queen.'),
-    ).toBeInTheDocument()
     expect(within(messageFeedCard as HTMLElement).getByText('SAN: e4')).toBeInTheDocument()
     expect(container.querySelector('[data-square="e2"]')).toHaveClass('chess-square-last-from')
     expect(container.querySelector('[data-square="e4"]')).toHaveClass('chess-square-last-to')
+
+    fireEvent.click(within(messageFeedCard as HTMLElement).getByText('Reasoning Summary'))
+
+    expect(reasoningDetails).toHaveAttribute('open')
+    expect(
+      within(messageFeedCard as HTMLElement).getByText('The double pawn push claims central space immediately.'),
+    ).toBeInTheDocument()
   })
 })

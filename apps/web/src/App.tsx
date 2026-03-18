@@ -51,26 +51,38 @@ interface BootstrapPayload {
   session: GameSession
 }
 
+interface PlayerSummary {
+  side: string
+  launcherLabel: string
+  status: string
+  statusLabel: string
+  lastError: string | null
+  canRestart: boolean
+}
+
 interface SessionSetupCardProps {
   games: GameCatalogItem[]
   sessions: GameSession[]
   selectedGameId: string
   selectedSessionId?: string
-  playerSummaries?: Array<{
-    side: string
-    launcherLabel: string
-    status: string
-    statusLabel: string
-    lastError: string | null
-    canRestart: boolean
-  }>
-  restartingSide?: string | null
+  activeGameLabel: string
+  syncLabel: string
+  turnLabel: string
+  statusLabel: string
+  winnerLabel: string
+  isCheck: boolean
+  error: string | null
   onCreateSession: () => void
   onGameChange: (gameId: string) => void
   onSessionChange?: (sessionId: string) => void
   onRefreshSession?: () => void
   onResetSession?: () => void
   onOpenAiSettings?: () => void
+}
+
+interface PlayersPanelProps {
+  players: PlayerSummary[]
+  restartingSide?: string | null
   onOpenEditPlayers?: () => void
   onRestartAi?: (side: string) => void
 }
@@ -400,112 +412,109 @@ function SessionSetupCard({
   sessions,
   selectedGameId,
   selectedSessionId,
-  playerSummaries,
-  restartingSide,
+  activeGameLabel,
+  syncLabel,
+  turnLabel,
+  statusLabel,
+  winnerLabel,
+  isCheck,
+  error,
   onCreateSession,
   onGameChange,
   onSessionChange,
   onRefreshSession,
   onResetSession,
   onOpenAiSettings,
-  onOpenEditPlayers,
-  onRestartAi,
 }: SessionSetupCardProps) {
   const { language, setLanguage, t } = useI18n()
   const filteredSessions = sessions.filter((session) => session.gameId === selectedGameId)
 
   return (
-    <div className="hero-toolbar" role="toolbar" aria-label={t('toolbar.aria')}>
-      <div className="toolbar-row toolbar-row-primary">
-        <label className="toolbar-field">
-          <span>{t('toolbar.game')}</span>
-          <select
-            aria-label={t('toolbar.game')}
-            value={selectedGameId}
-            onChange={(event) => onGameChange(event.target.value)}
-          >
-            {games.map((game) => (
-              <option key={game.id} value={game.id}>
-                {getGameLabel(language, game.id, game.shortName)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="toolbar-field toolbar-field-language">
-          <span>{t('toolbar.language')}</span>
-          <select
-            aria-label={t('toolbar.language')}
-            value={language}
-            onChange={(event) => setLanguage(event.target.value as 'en' | 'zh-CN')}
-          >
-            <option value="en">{t('toolbar.language.en')}</option>
-            <option value="zh-CN">{t('toolbar.language.zh-CN')}</option>
-          </select>
-        </label>
+    <div className="app-toolbar" role="toolbar" aria-label={t('toolbar.aria')}>
+      <div className="app-toolbar-row app-toolbar-row-primary">
+        <div className="app-brand">
+          <span className="app-brand-label">Human Agent Playground</span>
+          <span className="app-brand-context">{activeGameLabel}</span>
+        </div>
+
+        <div className="app-toolbar-controls">
+          <label className="toolbar-field">
+            <span>{t('toolbar.game')}</span>
+            <select
+              aria-label={t('toolbar.game')}
+              value={selectedGameId}
+              onChange={(event) => onGameChange(event.target.value)}
+            >
+              {games.map((game) => (
+                <option key={game.id} value={game.id}>
+                  {getGameLabel(language, game.id, game.shortName)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="toolbar-field toolbar-field-language">
+            <span>{t('toolbar.language')}</span>
+            <select
+              aria-label={t('toolbar.language')}
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as 'en' | 'zh-CN')}
+            >
+              <option value="en">{t('toolbar.language.en')}</option>
+              <option value="zh-CN">{t('toolbar.language.zh-CN')}</option>
+            </select>
+          </label>
+
+          <label className="toolbar-field">
+            <span>{t('toolbar.session')}</span>
+            <select
+              aria-label={t('toolbar.session')}
+              value={selectedSessionId ?? ''}
+              onChange={(event) => onSessionChange?.(event.target.value)}
+              disabled={filteredSessions.length === 0 || !onSessionChange}
+            >
+              {filteredSessions.length === 0 ? (
+                <option value="">{t('toolbar.noSessions')}</option>
+              ) : null}
+              {filteredSessions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {formatSessionOption(session)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button className="primary-button toolbar-button" type="button" onClick={onCreateSession}>
+            {t('toolbar.createSession')}
+          </button>
+        </div>
       </div>
-      <div className="toolbar-row toolbar-row-session">
-        <label className="toolbar-field">
-          <span>{t('toolbar.session')}</span>
-          <select
-            aria-label={t('toolbar.session')}
-            value={selectedSessionId ?? ''}
-            onChange={(event) => onSessionChange?.(event.target.value)}
-            disabled={filteredSessions.length === 0 || !onSessionChange}
-          >
-            {filteredSessions.length === 0 ? (
-              <option value="">{t('toolbar.noSessions')}</option>
-            ) : null}
-            {filteredSessions.map((session) => (
-              <option key={session.id} value={session.id}>
-                {formatSessionOption(session)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="primary-button toolbar-button" type="button" onClick={onCreateSession}>
-          {t('toolbar.createSession')}
-        </button>
-      </div>
-      {playerSummaries && playerSummaries.length > 0 ? (
-        <div className="toolbar-row toolbar-row-players">
-          <div className="toolbar-player-summary" aria-label={t('players.title')}>
-            {playerSummaries.map((item) => (
-              <span key={item.side} className="toolbar-player-chip-shell">
-                <span
-                  className={`toolbar-player-chip is-${item.status}`}
-                  title={item.lastError ?? undefined}
-                >
-                  <span className="toolbar-player-chip-content">
-                    <strong>{getSideLabel(language, item.side)}</strong>
-                    <span>{item.launcherLabel}</span>
-                  </span>
-                  <span className={`toolbar-player-chip-status status-${item.status}`}>
-                    <span className="toolbar-player-chip-status-dot" aria-hidden="true" />
-                    <span>{item.statusLabel}</span>
-                  </span>
-                </span>
-                {item.canRestart && onRestartAi ? (
-                  <button
-                    className="secondary-button toolbar-restart-button"
-                    type="button"
-                    onClick={() => onRestartAi(item.side)}
-                    disabled={restartingSide === item.side}
-                  >
-                    {restartingSide === item.side ? t('ai.restarting') : t('ai.restart')}
-                  </button>
-                ) : null}
-              </span>
-            ))}
-          </div>
-          {onOpenEditPlayers ? (
-            <button className="secondary-button toolbar-button" type="button" onClick={onOpenEditPlayers}>
-              {t('players.edit')}
-            </button>
+
+      <div className="app-toolbar-row app-toolbar-row-secondary">
+        <div className="status-strip" aria-label="Session status">
+          <span>
+            {t('meta.game')}: {activeGameLabel}
+          </span>
+          <span>
+            {t('meta.sync')}: {syncLabel}
+          </span>
+          <span>
+            {t('meta.turn')}: {turnLabel}
+          </span>
+          <span>
+            {t('meta.status')}: {statusLabel}
+          </span>
+          <span>
+            {t('meta.winner')}: {winnerLabel}
+          </span>
+          {isCheck ? (
+            <span>
+              {t('meta.check')}: {t('meta.checkActive')}
+            </span>
           ) : null}
         </div>
-      ) : null}
-      {onOpenAiSettings || onRefreshSession || onResetSession ? (
-        <div className="toolbar-row toolbar-row-actions">
+
+        <div className="app-toolbar-actions">
           {onOpenAiSettings ? (
             <button className="secondary-button toolbar-button" type="button" onClick={onOpenAiSettings}>
               {t('toolbar.aiSettings')}
@@ -526,8 +535,75 @@ function SessionSetupCard({
             </button>
           ) : null}
         </div>
+      </div>
+
+      {error ? (
+        <div className="toolbar-inline-alert" role="alert">
+          <strong>{t('hero.error')}</strong>
+          <p>{error}</p>
+        </div>
       ) : null}
     </div>
+  )
+}
+
+function PlayersPanel({
+  players,
+  restartingSide,
+  onOpenEditPlayers,
+  onRestartAi,
+}: PlayersPanelProps) {
+  const { language, t } = useI18n()
+
+  if (players.length === 0) {
+    return null
+  }
+
+  return (
+    <section className="players-panel">
+      <div className="players-panel-header">
+        <div>
+          <p className="eyebrow">{t('players.title')}</p>
+          <h2>{t('players.title')}</h2>
+        </div>
+        {onOpenEditPlayers ? (
+          <button className="secondary-button players-edit-button" type="button" onClick={onOpenEditPlayers}>
+            {t('players.edit')}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="players-panel-list" role="list" aria-label={t('players.title')}>
+        {players.map((item) => (
+          <article
+            key={item.side}
+            className={`players-seat-card is-${item.status}`}
+            title={item.lastError ?? undefined}
+            role="listitem"
+          >
+            <div className="players-seat-card-header">
+              <strong>{getSideLabel(language, item.side)}</strong>
+              <span className={`players-seat-status status-${item.status}`}>
+                <span className="players-seat-status-dot" aria-hidden="true" />
+                <span>{item.statusLabel}</span>
+              </span>
+            </div>
+            <p className="players-seat-launcher">{item.launcherLabel}</p>
+            {item.lastError ? <p className="players-seat-error">{item.lastError}</p> : null}
+            {item.canRestart && onRestartAi ? (
+              <button
+                className="secondary-button players-restart-button"
+                type="button"
+                onClick={() => onRestartAi(item.side)}
+                disabled={restartingSide === item.side}
+              >
+                {restartingSide === item.side ? t('ai.restarting') : t('ai.restart')}
+              </button>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -1084,7 +1160,7 @@ function AppContent() {
     session && summary?.status === 'finished' ? `${session.id}:${session.updatedAt}` : null
   const showGameOverDialog =
     Boolean(finishedSessionKey) && activeGameOverSessionKey === finishedSessionKey
-  const playerSummaries =
+  const playerSummaries: PlayerSummary[] =
     session && activeGame
       ? resolveGameSides(activeGame, session).map((side) => {
           const seat = session.aiSeats?.[side]
@@ -1176,64 +1252,30 @@ function AppContent() {
 
   return (
     <main className="app-shell">
-      <section className="hero-panel">
-        <div className="hero-main">
-          <div className="hero-copy-block">
-            <p className="eyebrow">Human Agent Playground</p>
-            <h1>{t('hero.heading')}</h1>
-            <p className="hero-copy">{t('hero.copy')}</p>
-            <div className="meta-strip">
-              <span>
-                {t('meta.game')}: {activeGameLabel}
-              </span>
-              <span>
-                {t('meta.sync')}: {getSyncStateLabel(language, syncState)}
-              </span>
-              <span>
-                {t('meta.turn')}: {summary ? getWinnerLabel(language, summary.turn) : '...'}
-              </span>
-              <span>
-                {t('meta.status')}: {summary ? getStatusLabel(language, summary.status) : '...'}
-              </span>
-              <span>
-                {t('meta.winner')}: {summary ? getWinnerLabel(language, summary.winner) : t('winner.none')}
-              </span>
-              {isCheck ? (
-                <span>
-                  {t('meta.check')}: {t('meta.checkActive')}
-                </span>
-              ) : null}
-            </div>
-            {error ? (
-              <div className="hero-alert" role="alert">
-                <strong>{t('hero.error')}</strong>
-                <p>{error}</p>
-              </div>
-            ) : null}
-          </div>
-          <div className="hero-controls">
-            <SessionSetupCard
-              games={games}
-              sessions={sessions}
-              selectedGameId={selectedGameId}
-              selectedSessionId={session?.id}
-              onCreateSession={handleOpenCreateSession}
-              onGameChange={setSelectedGameId}
-              onSessionChange={handleSessionChange}
-              onRefreshSession={handleRefreshSession}
-              onResetSession={handleResetSession}
-              playerSummaries={playerSummaries}
-              restartingSide={restartingSide}
-              onOpenEditPlayers={handleOpenEditPlayers}
-              onRestartAi={handleRestartAi}
-              onOpenAiSettings={() => {
-                setFocusedRuntimeProviderId(null)
-                setAiSettingsOpen(true)
-              }}
-            />
-          </div>
-        </div>
-      </section>
+      <header className="app-chrome">
+        <SessionSetupCard
+          games={games}
+          sessions={sessions}
+          selectedGameId={selectedGameId}
+          selectedSessionId={session?.id}
+          activeGameLabel={activeGameLabel}
+          syncLabel={getSyncStateLabel(language, syncState)}
+          turnLabel={summary ? getWinnerLabel(language, summary.turn) : '...'}
+          statusLabel={summary ? getStatusLabel(language, summary.status) : '...'}
+          winnerLabel={summary ? getWinnerLabel(language, summary.winner) : t('winner.none')}
+          isCheck={Boolean(isCheck)}
+          error={error}
+          onCreateSession={handleOpenCreateSession}
+          onGameChange={setSelectedGameId}
+          onSessionChange={handleSessionChange}
+          onRefreshSession={handleRefreshSession}
+          onResetSession={handleResetSession}
+          onOpenAiSettings={() => {
+            setFocusedRuntimeProviderId(null)
+            setAiSettingsOpen(true)
+          }}
+        />
+      </header>
 
       <section className="workspace">
         {loading && (
@@ -1260,6 +1302,14 @@ function AppContent() {
             session={session}
             error={error}
             gameOverDialog={gameOverDialog}
+            sideRailHeader={
+              <PlayersPanel
+                players={playerSummaries}
+                restartingSide={restartingSide}
+                onOpenEditPlayers={handleOpenEditPlayers}
+                onRestartAi={handleRestartAi}
+              />
+            }
             setupPanel={
               activeThinkingPlayer ? (
                 <li
