@@ -10,6 +10,7 @@ import {
   useI18n,
 } from '../../i18n'
 import { ActivityFeed } from '../shared/ActivityFeed'
+import { useBoardViewport } from '../shared/boardViewport'
 import type { GameWorkspaceProps } from '../types'
 import { getChessLegalMoves, playChessMove } from './api'
 import { ChessBoard } from './components/ChessBoard'
@@ -39,6 +40,7 @@ export function ChessWorkspace({
   const session = toChessSession(rawSession)
   const [selectedSquare, setSelectedSquare] = useState<ChessSquare | null>(null)
   const [legalTargets, setLegalTargets] = useState<Set<ChessSquare>>(new Set())
+  const { boardPanelRef, boardPanelStyle } = useBoardViewport(1)
 
   useEffect(() => {
     setSelectedSquare(null)
@@ -100,7 +102,7 @@ export function ChessWorkspace({
 
   return (
     <div className="game-workspace-layout">
-      <article className="board-panel">
+      <article className="board-panel" ref={boardPanelRef} style={boardPanelStyle}>
         <ChessBoard
           board={session.state.board}
           selectedSquare={selectedSquare}

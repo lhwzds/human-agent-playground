@@ -12,9 +12,12 @@ import {
   useI18n,
 } from '../../i18n'
 import { ActivityFeed } from '../shared/ActivityFeed'
+import { useBoardViewport } from '../shared/boardViewport'
 import type { GameWorkspaceProps } from '../types'
 import { getXiangqiLegalMoves, playXiangqiMove } from './api'
 import { XiangqiBoard } from './components/XiangqiBoard'
+
+const XIANGQI_BOARD_SHELL_ASPECT_RATIO = 0.915
 
 function toXiangqiSession(session: GameSession): GameSession<XiangqiGameState> {
   if (
@@ -41,6 +44,7 @@ export function XiangqiWorkspace({
   const session = toXiangqiSession(rawSession)
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
   const [legalMoves, setLegalMoves] = useState<XiangqiMove[]>([])
+  const { boardPanelRef, boardPanelStyle } = useBoardViewport(XIANGQI_BOARD_SHELL_ASPECT_RATIO)
 
   useEffect(() => {
     setSelectedSquare(null)
@@ -84,7 +88,7 @@ export function XiangqiWorkspace({
 
   return (
     <div className="game-workspace-layout">
-      <article className="board-panel">
+      <article className="board-panel" ref={boardPanelRef} style={boardPanelStyle}>
         <XiangqiBoard
           board={session.state.board}
           selectedSquare={selectedSquare}

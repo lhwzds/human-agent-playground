@@ -9,6 +9,7 @@ import {
   useI18n,
 } from '../../i18n'
 import { ActivityFeed } from '../shared/ActivityFeed'
+import { useBoardViewport } from '../shared/boardViewport'
 import type { GameWorkspaceProps } from '../types'
 import { getGomokuLegalMoves, playGomokuMove } from './api'
 import { GomokuBoard } from './components/GomokuBoard'
@@ -36,6 +37,7 @@ export function GomokuWorkspace({
 }: GameWorkspaceProps) {
   const { t } = useI18n()
   const session = toGomokuSession(rawSession)
+  const { boardPanelRef, boardPanelStyle } = useBoardViewport(1)
 
   async function handlePointClick(point: GomokuPoint) {
     try {
@@ -65,7 +67,7 @@ export function GomokuWorkspace({
 
   return (
     <div className="game-workspace-layout">
-      <article className="board-panel">
+      <article className="board-panel" ref={boardPanelRef} style={boardPanelStyle}>
         <GomokuBoard
           board={session.state.board}
           lastMovePoint={lastMovePoint}

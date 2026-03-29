@@ -10,6 +10,7 @@ import {
   useI18n,
 } from '../../i18n'
 import { ActivityFeed } from '../shared/ActivityFeed'
+import { useBoardViewport } from '../shared/boardViewport'
 import type { GameWorkspaceProps } from '../types'
 import { getOthelloLegalMoves, playOthelloMove } from './api'
 import { OthelloBoard } from './components/OthelloBoard'
@@ -38,6 +39,7 @@ export function OthelloWorkspace({
   const { t } = useI18n()
   const session = toOthelloSession(rawSession)
   const [legalMoves, setLegalMoves] = useState<Set<OthelloPoint>>(new Set())
+  const { boardPanelRef, boardPanelStyle } = useBoardViewport(1)
 
   useEffect(() => {
     let cancelled = false
@@ -86,7 +88,7 @@ export function OthelloWorkspace({
 
   return (
     <div className="game-workspace-layout">
-      <article className="board-panel">
+      <article className="board-panel" ref={boardPanelRef} style={boardPanelStyle}>
         <OthelloBoard
           board={session.state.board}
           legalMoves={legalMoves}

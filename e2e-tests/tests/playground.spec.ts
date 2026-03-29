@@ -112,6 +112,7 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
     has: page.getByRole('heading', { name: 'Message Feed' }),
   })
 
+  await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
 
   await expect(page.getByText('Human Agent Playground')).toBeVisible()
@@ -130,6 +131,33 @@ test('creates a Xiangqi session and plays a legal opening move', async ({ page }
     page.locator('.app-toolbar').getByRole('button', { name: 'Refresh', exact: true }),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible()
+
+  const xiangqiBoardMetrics = await page.evaluate(() => {
+    const boardPanel = document.querySelector('.game-workspace-layout .board-panel')?.getBoundingClientRect()
+    const boardShell = document.querySelector('.xiangqi-board-shell')?.getBoundingClientRect()
+    const boardGrid = document.querySelector('.xiangqi-board-shell .board-grid')?.getBoundingClientRect()
+    const boardCell = document.querySelector('[data-square="e5"]')?.getBoundingClientRect()
+    const piece = document.querySelector('.xiangqi-board-shell .piece')?.getBoundingClientRect()
+
+    return {
+      panelLeft: boardPanel?.left ?? 0,
+      panelRight: boardPanel?.right ?? 0,
+      shellLeft: boardShell?.left ?? 0,
+      shellRight: boardShell?.right ?? 0,
+      shellWidth: boardShell?.width ?? 0,
+      gridWidth: boardGrid?.width ?? 0,
+      cellWidth: boardCell?.width ?? 0,
+      cellHeight: boardCell?.height ?? 0,
+      pieceWidth: piece?.width ?? 0,
+      pieceHeight: piece?.height ?? 0,
+    }
+  })
+
+  expect(xiangqiBoardMetrics.shellLeft).toBeGreaterThanOrEqual(xiangqiBoardMetrics.panelLeft - 1)
+  expect(xiangqiBoardMetrics.shellRight).toBeLessThanOrEqual(xiangqiBoardMetrics.panelRight + 1)
+  expect(xiangqiBoardMetrics.shellWidth).toBeGreaterThanOrEqual(xiangqiBoardMetrics.gridWidth)
+  expect(Math.abs(xiangqiBoardMetrics.cellWidth - xiangqiBoardMetrics.cellHeight)).toBeLessThan(2)
+  expect(Math.abs(xiangqiBoardMetrics.pieceWidth - xiangqiBoardMetrics.pieceHeight)).toBeLessThan(1)
 
   const heroHeights = await page.evaluate(() => {
     const chrome = document.querySelector('.app-chrome')?.getBoundingClientRect()
@@ -467,12 +495,28 @@ test('creates a Chess session and plays a legal opening move', async ({ page }) 
     has: page.getByRole('heading', { name: 'Message Feed' }),
   })
 
+  await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
   await selectGame(page, 'chess')
   await createSessionThroughUi(page, 'chess')
 
   await expect(page.getByText('Game: Chess')).toBeVisible()
   await expect(page.getByText('Turn: white')).toBeVisible()
+
+  const boardBounds = await page.evaluate(() => {
+    const boardPanel = document.querySelector('.game-workspace-layout .board-panel')?.getBoundingClientRect()
+    const boardShell = document.querySelector('.chess-board-shell')?.getBoundingClientRect()
+
+    return {
+      panelTop: boardPanel?.top ?? 0,
+      panelBottom: boardPanel?.bottom ?? 0,
+      shellTop: boardShell?.top ?? 0,
+      shellBottom: boardShell?.bottom ?? 0,
+    }
+  })
+
+  expect(boardBounds.shellTop).toBeGreaterThanOrEqual(boardBounds.panelTop - 1)
+  expect(boardBounds.shellBottom).toBeLessThanOrEqual(boardBounds.panelBottom + 1)
 
   await page.locator('[data-square="e2"]').click()
   await expect(page.locator('[data-square="e4"]')).toHaveClass(/chess-square-target/)

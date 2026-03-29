@@ -10,6 +10,7 @@ import {
   useI18n,
 } from '../../i18n'
 import { ActivityFeed } from '../shared/ActivityFeed'
+import { useBoardViewport } from '../shared/boardViewport'
 import type { GameWorkspaceProps } from '../types'
 import { getConnectFourLegalMoves, playConnectFourMove } from './api'
 import { ConnectFourBoard } from './components/ConnectFourBoard'
@@ -37,6 +38,7 @@ export function ConnectFourWorkspace({
 }: GameWorkspaceProps) {
   const { t } = useI18n()
   const session = toConnectFourSession(rawSession)
+  const { boardPanelRef, boardPanelStyle } = useBoardViewport(1.04)
 
   async function handleColumnClick(column: ConnectFourColumn) {
     try {
@@ -66,7 +68,7 @@ export function ConnectFourWorkspace({
 
   return (
     <div className="game-workspace-layout">
-      <article className="board-panel">
+      <article className="board-panel" ref={boardPanelRef} style={boardPanelStyle}>
         <ConnectFourBoard
           board={session.state.board}
           lastMovePoint={lastMovePoint}
