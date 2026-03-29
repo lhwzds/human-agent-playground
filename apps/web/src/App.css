@@ -1592,6 +1592,12 @@
   display: flex;
 }
 
+.message-feed-end-anchor {
+  height: 1px;
+  margin: 0;
+  padding: 0;
+}
+
 .message-feed-item-human {
   justify-content: flex-end;
 }

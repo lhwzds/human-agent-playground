@@ -328,6 +328,23 @@ test('reflects external session moves in real time', async ({ page, request }) =
   await expect(page.locator('[data-square="a5"]')).toHaveClass(/board-cell-last-from/)
   await expect(page.locator('[data-square="a6"]')).toHaveClass(/board-cell-last-to/)
   await expect(messageFeedCard.getByText('a4 → a5')).toBeVisible()
+
+  const scrollPosition = await page.evaluate(() => {
+    const feedList = document.querySelector('.message-feed-list')
+    if (!(feedList instanceof HTMLElement)) {
+      return null
+    }
+
+    return {
+      scrollTop: feedList.scrollTop,
+      maxScrollTop: feedList.scrollHeight - feedList.clientHeight,
+    }
+  })
+
+  expect(scrollPosition).not.toBeNull()
+  expect(
+    Math.abs((scrollPosition?.maxScrollTop ?? 0) - (scrollPosition?.scrollTop ?? 0)),
+  ).toBeLessThan(4)
 })
 
 test('refreshes and switches to an externally created session', async ({ page, request }) => {

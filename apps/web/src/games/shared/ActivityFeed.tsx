@@ -2,7 +2,7 @@ import type {
   DecisionExplanation,
   SessionEvent,
 } from '@human-agent-playground/core'
-import type { ReactNode } from 'react'
+import { type ReactNode, useLayoutEffect, useMemo, useRef } from 'react'
 
 import {
   formatActorLabel,
@@ -30,6 +30,22 @@ export function ActivityFeed({
   renderMoveDetails,
 }: ActivityFeedProps) {
   const { t } = useI18n()
+  const feedEndRef = useRef<HTMLLIElement | null>(null)
+  const scrollKey = useMemo(
+    () =>
+      JSON.stringify({
+        eventCount: events.length,
+        lastEventId: events.at(-1)?.id ?? null,
+        hasPendingItem: Boolean(pendingItem),
+      }),
+    [events, pendingItem],
+  )
+
+  useLayoutEffect(() => {
+    feedEndRef.current?.scrollIntoView({
+      block: 'end',
+    })
+  }, [scrollKey])
 
   return (
     <div className="panel-card panel-card-feed">
@@ -47,6 +63,7 @@ export function ActivityFeed({
             />
           ))}
           {pendingItem}
+          <li aria-hidden="true" className="message-feed-end-anchor" ref={feedEndRef} />
         </ol>
       )}
     </div>
