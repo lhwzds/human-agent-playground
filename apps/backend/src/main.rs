@@ -11,7 +11,8 @@ use futures::StreamExt;
 use futures::stream::once;
 use hap_models::{
     AiRuntimeSettings, CreateAuthProfileInput, CreateSessionInput, GameSession, SessionStreamEvent,
-    UpdateAiSeatInput, UpdateAiSeatLauncherInput, UpdateAuthProfileInput,
+    UpdateAiSeatInput, UpdateAiSeatLauncherInput, UpdateAiSeatLaunchersInput,
+    UpdateAuthProfileInput,
 };
 use hap_runtime::{HumanAgentPlaygroundRuntime, RuntimeConfig, RuntimeError};
 use serde_json::{Value, json};
@@ -122,7 +123,7 @@ fn build_app(runtime: Arc<HumanAgentPlaygroundRuntime>, cancellation: Cancellati
         )
         .route(
             "/api/sessions/{session_id}/ai-seats",
-            get(handle_get_ai_seats),
+            get(handle_get_ai_seats).patch(handle_update_ai_seat_launchers),
         )
         .route(
             "/api/sessions/{session_id}/ai-seats/{side}",
@@ -308,6 +309,18 @@ async fn handle_get_ai_seats(
 ) -> Result<Json<Value>, ApiError> {
     let seats = state.runtime.get_ai_seats(&session_id).await?;
     Ok(Json(json!({ "seats": seats })))
+}
+
+async fn handle_update_ai_seat_launchers(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Json(input): Json<UpdateAiSeatLaunchersInput>,
+) -> Result<Json<Value>, ApiError> {
+    let session = state
+        .runtime
+        .update_ai_seat_launchers(&session_id, input)
+        .await?;
+    Ok(Json(serde_json::to_value(session).unwrap_or(Value::Null)))
 }
 
 async fn handle_update_ai_seat(

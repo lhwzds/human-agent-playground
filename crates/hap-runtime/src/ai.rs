@@ -115,25 +115,39 @@ impl CompletionExecutor {
         &self,
         system_prompt: String,
         user_prompt: String,
+        timeout_ms: u64,
     ) -> std::result::Result<restflow_ai::llm::CompletionResponse, DecisionFailure> {
-        match self {
-            Self::Client(client) => client
-                .complete(
-                    CompletionRequest::new(vec![
-                        Message::system(system_prompt),
-                        Message::user(user_prompt),
-                    ])
-                    .with_max_tokens(1200),
-                )
-                .await
-                .map_err(|error| {
-                    DecisionFailure::provider_request_failed(format!(
-                        "Failed to complete turn decision: {error}"
-                    ))
-                }),
-            Self::ClaudeCodeCli { cli_model } => {
-                complete_with_claude_code_cli(cli_model, &system_prompt, &user_prompt).await
+        match tokio::time::timeout(
+            std::time::Duration::from_millis(timeout_ms),
+            async {
+                match self {
+                    Self::Client(client) => client
+                        .complete(
+                            CompletionRequest::new(vec![
+                                Message::system(system_prompt),
+                                Message::user(user_prompt),
+                            ])
+                            .with_max_tokens(1200),
+                        )
+                        .await
+                        .map_err(|error| {
+                            DecisionFailure::provider_request_failed(format!(
+                                "Failed to complete turn decision: {error}"
+                            ))
+                        }),
+                    Self::ClaudeCodeCli { cli_model } => {
+                        complete_with_claude_code_cli(cli_model, &system_prompt, &user_prompt)
+                            .await
+                    }
+                }
             }
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(DecisionFailure::provider_request_failed(format!(
+                "The AI provider request timed out after {timeout_ms}ms"
+            ))),
         }
     }
 }
@@ -359,6 +373,7 @@ async fn decide_turn_inner(
         &request.seat_side,
         request.seat_config.prompt_override.as_deref(),
     );
+    let timeout_ms = request.seat_config.timeout_ms.unwrap_or(60_000);
     let user_prompt = build_user_prompt(&request).map_err(|error| {
         DecisionFailure::provider_request_failed(format!(
             "Failed to build the turn decision prompt: {error}"
@@ -381,7 +396,9 @@ async fn decide_turn_inner(
         CompletionExecutor::Client(client)
     };
 
-    let response = executor.complete(system_prompt, user_prompt).await?;
+    let response = executor
+        .complete(system_prompt, user_prompt, timeout_ms)
+        .await?;
     let repair_legal_moves = request.legal_moves.clone();
 
     let content = response
@@ -408,7 +425,7 @@ async fn decide_turn_inner(
                 )?;
 
             let repair_response = executor
-                .complete(repair_system_prompt, repair_user_prompt)
+                .complete(repair_system_prompt, repair_user_prompt, timeout_ms)
                 .await
                 .map_err(|error| {
                     DecisionFailure::provider_request_failed(format!(
@@ -730,7 +747,39 @@ fn finalize_decision_response(
         ));
     }
 
+    let mut parsed = parsed;
+    parsed.reasoning = Some(match parsed.reasoning.take() {
+        Some(reasoning) => normalize_raw_reasoning(reasoning),
+        None => fallback_raw_reasoning(),
+    });
+
     Ok(parsed)
+}
+
+fn normalize_raw_reasoning(mut reasoning: RawReasoning) -> RawReasoning {
+    if reasoning.summary.trim().is_empty() {
+        reasoning.summary = "Selected a legal move for the current position.".to_string();
+    }
+
+    if reasoning.reasoning_steps.is_empty() {
+        reasoning
+            .reasoning_steps
+            .push("Chose one move from the provided legal move list.".to_string());
+    }
+
+    reasoning
+}
+
+fn fallback_raw_reasoning() -> RawReasoning {
+    RawReasoning {
+        summary: "Selected a legal move for the current position.".to_string(),
+        reasoning_steps: vec![
+            "Evaluated the current board state.".to_string(),
+            "Chose one move from the provided legal move list.".to_string(),
+        ],
+        considered_alternatives: Vec::new(),
+        confidence: None,
+    }
 }
 
 async fn parse_or_repair_decision_response<F, Fut>(
@@ -920,6 +969,37 @@ mod tests {
         .unwrap();
 
         assert_eq!(repaired.action, Some(json!({ "from": "e7", "to": "e5" })));
+        assert_eq!(
+            repaired
+                .reasoning
+                .as_ref()
+                .map(|reasoning| reasoning.reasoning_steps.len()),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn injects_fallback_reasoning_when_the_model_omits_it() {
+        let finalized = finalize_decision_response(
+            RawDecisionResponse {
+                action: Some(json!({ "from": "e7", "to": "e5" })),
+                reasoning: None,
+            },
+            "{\"action\":{\"from\":\"e7\",\"to\":\"e5\"}}",
+        )
+        .unwrap();
+
+        assert_eq!(finalized.action, Some(json!({ "from": "e7", "to": "e5" })));
+        assert_eq!(
+            finalized.reasoning.as_ref().map(|reasoning| reasoning.summary.as_str()),
+            Some("Selected a legal move for the current position.")
+        );
+        assert!(
+            finalized
+                .reasoning
+                .as_ref()
+                .is_some_and(|reasoning| !reasoning.reasoning_steps.is_empty())
+        );
     }
 
     #[tokio::test]
@@ -978,6 +1058,59 @@ echo '{"loggedIn":true}'
 
         assert_eq!(result.action, Some(json!({ "from": "e7", "to": "e5" })));
         assert_eq!(result.error, None);
+
+        unsafe {
+            std::env::remove_var("RESTFLOW_CLAUDE_BIN");
+        }
+    }
+
+    #[tokio::test]
+    async fn returns_timeout_error_when_the_provider_request_exceeds_timeout() {
+        let _lock = claude_env_lock();
+        let script = write_test_claude_script(
+            "claude-timeout",
+            r#"#!/bin/sh
+if [ "$1" = "--print" ]; then
+  sleep 1
+  echo '{"action":{"from":"e7","to":"e5"}}'
+  exit 0
+fi
+echo '{"loggedIn":true}'
+"#,
+        );
+        unsafe {
+            std::env::set_var("RESTFLOW_CLAUDE_BIN", &script);
+        }
+
+        let auth_path = std::env::temp_dir().join(format!("auth-timeout-{}.db", Uuid::new_v4()));
+        let auth_manager = build_auth_manager(&auth_path).await.unwrap();
+        let result = decide_turn(
+            auth_manager,
+            DecideTurnRequest {
+                game_id: "chess".to_string(),
+                session_id: "session-timeout".to_string(),
+                seat_side: "black".to_string(),
+                state: json!({ "kind": "chess", "turn": "black" }),
+                legal_moves: json!([{ "from": "e7", "to": "e5" }]),
+                recent_events: json!([]),
+                seat_config: SeatConfigInput {
+                    provider_profile_id: None,
+                    provider: Some("claude-code".to_string()),
+                    model: "claude-code-sonnet".to_string(),
+                    prompt_override: None,
+                    timeout_ms: Some(10),
+                },
+            },
+        )
+        .await;
+
+        assert_eq!(result.error_code.as_deref(), Some("provider_request_failed"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .is_some_and(|message| message.contains("timed out"))
+        );
 
         unsafe {
             std::env::remove_var("RESTFLOW_CLAUDE_BIN");

@@ -275,6 +275,12 @@ pub struct UpdateAiSeatLauncherInput {
     pub advanced: Option<UpdateAiSeatLauncherAdvancedInput>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(transparent)]
+pub struct UpdateAiSeatLaunchersInput {
+    pub seats: HashMap<String, UpdateAiSeatLauncherInput>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAuthProfileInput {

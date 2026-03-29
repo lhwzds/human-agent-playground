@@ -21,6 +21,7 @@ import {
   saveAiRuntimeSettings,
   testAuthProfile,
   updateAiSeatLauncher,
+  updateAiSeatLaunchers,
   updateAuthProfile,
 } from './api'
 import './App.css'
@@ -727,10 +728,14 @@ function AppContent() {
   }, [session?.id])
 
   useEffect(() => {
+    if (editPlayersOpen) {
+      return
+    }
+
     setEditSeatLauncherDrafts((current) =>
       buildSeatLauncherDraftMap(session, activeGame, providers, runtimeSettings, current),
     )
-  }, [session?.id, session?.updatedAt, activeGame?.id, providers, runtimeSettings])
+  }, [editPlayersOpen, session?.id, session?.updatedAt, activeGame?.id, providers, runtimeSettings])
 
   useEffect(() => {
     if (!createSessionOpen) {
@@ -798,7 +803,11 @@ function AppContent() {
   }
 
   function handleOpenCreateSession() {
-    const nextGameId = games.length > 0 ? resolvePreferredGameId(games) : createSessionGameId
+    const nextGameId =
+      (selectedGameId && games.some((candidate) => candidate.id === selectedGameId)
+        ? selectedGameId
+        : null) ??
+      (games.length > 0 ? resolvePreferredGameId(games) : createSessionGameId)
     const selectedGame = games.find((candidate) => candidate.id === nextGameId)
     setPlayerDialogError(null)
     setCreateSessionGameId(nextGameId)
@@ -901,6 +910,22 @@ function AppContent() {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Session switch failed')
     }
+  }
+
+  async function handleGameChange(gameId: string) {
+    setSelectedGameId(gameId)
+    if (session?.gameId === gameId) {
+      return
+    }
+
+    const matchingSession = sessions.find((candidate) => candidate.gameId === gameId) ?? null
+    if (!matchingSession) {
+      setSession(null)
+      setSyncState('offline')
+      return
+    }
+
+    await handleSessionChange(matchingSession.id)
   }
 
   function handleProviderDraftChange(
@@ -1083,19 +1108,25 @@ function AppContent() {
       setPlayersBusy(true)
       setPlayerDialogError(null)
       const sides = resolveGameSides(activeGame, session)
-
-      let updated = session
-      for (const side of sides) {
-        const draft =
-          editSeatLauncherDrafts[side] ??
-          createSeatLauncherDraft(session.aiSeats?.[side], providers, runtimeSettings)
-        updated = await updateAiSeatLauncher(session.id, side, {
-          launcher: draft.launcher,
-          model: draft.launcher === 'human' ? undefined : draft.model || undefined,
-          autoPlay: draft.launcher === 'human' ? undefined : draft.autoPlay,
-        })
-        applySessionSnapshot(updated)
-      }
+      const updated = await updateAiSeatLaunchers(
+        session.id,
+        Object.fromEntries(
+          sides.map((side) => {
+            const draft =
+              editSeatLauncherDrafts[side] ??
+              createSeatLauncherDraft(session.aiSeats?.[side], providers, runtimeSettings)
+            return [
+              side,
+              {
+                launcher: draft.launcher,
+                model: draft.launcher === 'human' ? undefined : draft.model || undefined,
+                autoPlay: draft.launcher === 'human' ? undefined : draft.autoPlay,
+              },
+            ]
+          }),
+        ),
+      )
+      applySessionSnapshot(updated)
 
       setEditPlayersOpen(false)
       setAiError(null)
@@ -1266,7 +1297,9 @@ function AppContent() {
           isCheck={Boolean(isCheck)}
           error={error}
           onCreateSession={handleOpenCreateSession}
-          onGameChange={setSelectedGameId}
+          onGameChange={(gameId) => {
+            void handleGameChange(gameId)
+          }}
           onSessionChange={handleSessionChange}
           onRefreshSession={handleRefreshSession}
           onResetSession={handleResetSession}

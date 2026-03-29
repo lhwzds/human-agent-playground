@@ -169,6 +169,12 @@ export const updateAiSeatLauncherInputSchema = z.object({
 })
 export type UpdateAiSeatLauncherInput = z.infer<typeof updateAiSeatLauncherInputSchema>
 
+export const updateAiSeatLaunchersInputSchema = z.record(
+  z.string().min(1),
+  updateAiSeatLauncherInputSchema,
+)
+export type UpdateAiSeatLaunchersInput = z.infer<typeof updateAiSeatLaunchersInputSchema>
+
 export const createAuthProfileInputSchema = z.object({
   name: z.string().min(1),
   provider: z.string().min(1),

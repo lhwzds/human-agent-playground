@@ -153,6 +153,7 @@ pub(crate) fn resolve_claude_executable() -> Option<PathBuf> {
             if path.is_file() {
                 return Some(path);
             }
+            return None;
         }
     }
 
@@ -184,7 +185,9 @@ pub(crate) fn claude_code_cli_status() -> ClaudeCodeCliStatus {
 #[cfg(test)]
 pub(crate) fn claude_env_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
 }
 
 pub fn auth_provider_id(provider: &AuthProvider) -> &'static str {

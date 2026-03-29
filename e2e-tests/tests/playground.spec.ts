@@ -468,6 +468,16 @@ test('creates a Chess session and plays a legal opening move', async ({ page }) 
   await expect(page.locator('[data-square="e4"]')).toHaveClass(/chess-square-last-to/)
 })
 
+test('keeps the toolbar game selection when opening create session', async ({ page }) => {
+  await page.goto('/')
+  await selectGame(page, 'gomoku')
+  await page.getByRole('button', { name: 'Create Session' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Create Session' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('combobox', { name: 'Game' })).toHaveValue('gomoku')
+})
+
 test('auto-plays a black Chess seat through the Rust bridge after a human move', async ({
   page,
   request,

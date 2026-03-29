@@ -8,6 +8,7 @@ import type {
   SessionStreamEvent,
   UpdateAiSeatInput,
   UpdateAiSeatLauncherInput,
+  UpdateAiSeatLaunchersInput,
   UpdateAuthProfileInput,
   AuthProfileSummary,
   CreateSessionInput,
@@ -188,6 +189,16 @@ export function updateAiSeatLauncher(
   input: UpdateAiSeatLauncherInput,
 ): Promise<GameSession> {
   return request(`/api/sessions/${sessionId}/ai-seats/${side}/launcher`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateAiSeatLaunchers(
+  sessionId: string,
+  input: UpdateAiSeatLaunchersInput,
+): Promise<GameSession> {
+  return request(`/api/sessions/${sessionId}/ai-seats`, {
     method: 'PATCH',
     body: JSON.stringify(input),
   })

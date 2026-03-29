@@ -11,7 +11,7 @@ use hap_models::{
     AiSeatStatus, AuthProfileSummary, CreateAuthProfileInput, CreateSessionInput,
     DecisionExplanation, GameCatalogItem, GameSession, PersistedSessions, ProviderCapability,
     SessionActorKind, SessionChannel, SessionEvent, SessionEventKind, UpdateAiSeatInput,
-    UpdateAiSeatLauncherInput, UpdateAuthProfileInput, now_iso,
+    UpdateAiSeatLauncherInput, UpdateAiSeatLaunchersInput, UpdateAuthProfileInput, now_iso,
 };
 use restflow_core::auth::AuthProfileManager;
 use serde_json::{Value, json};
@@ -295,9 +295,6 @@ impl HumanAgentPlaygroundRuntime {
         session_id: &str,
         input: Value,
     ) -> Result<GameSession, RuntimeError> {
-        let session = self.get_session(session_id).await?;
-        let adapter = get_game_adapter(&session.game_id)
-            .map_err(|error| RuntimeError::not_found(error.to_string()))?;
         let actor = resolve_actor_context(
             &input,
             SessionActorContext {
@@ -308,50 +305,47 @@ impl HumanAgentPlaygroundRuntime {
         );
         let reasoning = parse_decision_explanation(&input)?;
         validate_agent_move_explanation(&actor, reasoning.as_ref())?;
+        let updated = self
+            .update_latest_session(session_id, |latest| {
+                let adapter = get_game_adapter(&latest.game_id)
+                    .map_err(|error| RuntimeError::not_found(error.to_string()))?;
+                let next_state = adapter
+                    .play_move(&latest.state, &input)
+                    .map_err(|error| RuntimeError::bad_request(error.to_string()))?;
+                let move_details = merge_detail_maps(
+                    &parse_move_event_details(&next_state),
+                    &parse_ai_runtime_event_details(&input),
+                );
+                let timestamp = now_iso();
+                let turn = read_session_turn(&next_state);
+                let status = read_session_status(&next_state);
+                let current_ai_seats =
+                    normalize_ai_seats(&adapter.game().sides, latest.ai_seats.as_ref());
 
-        let next_state = adapter
-            .play_move(&session.state, &input)
-            .map_err(|error| RuntimeError::bad_request(error.to_string()))?;
-        let move_details = merge_detail_maps(
-            &parse_move_event_details(&next_state),
-            &parse_ai_runtime_event_details(&input),
-        );
-        let timestamp = now_iso();
-        let turn = read_session_turn(&next_state);
-        let status = read_session_status(&next_state);
-        let current_ai_seats = normalize_ai_seats(&adapter.game().sides, session.ai_seats.as_ref());
-
-        let updated = GameSession {
-            id: session.id.clone(),
-            game_id: session.game_id.clone(),
-            created_at: session.created_at.clone(),
-            updated_at: timestamp.clone(),
-            state: next_state,
-            ai_seats: Some(reconcile_ai_seats(
-                current_ai_seats,
-                turn.as_deref(),
-                status.as_deref(),
-            )),
-            events: {
-                let mut events = session.events.clone();
-                events.push(create_move_played_event(
-                    &timestamp,
-                    &actor,
-                    reasoning.as_ref(),
-                    move_details,
-                ));
-                events
-            },
-        };
-
-        {
-            let mut state = self.state.write().await;
-            state
-                .sessions
-                .insert(session_id.to_string(), updated.clone());
-        }
-        self.persist().await.map_err(RuntimeError::internal)?;
-        self.emit_session_update(&updated).await;
+                Ok(GameSession {
+                    id: latest.id.clone(),
+                    game_id: latest.game_id.clone(),
+                    created_at: latest.created_at.clone(),
+                    updated_at: timestamp.clone(),
+                    state: next_state,
+                    ai_seats: Some(reconcile_ai_seats(
+                        current_ai_seats,
+                        turn.as_deref(),
+                        status.as_deref(),
+                    )),
+                    events: {
+                        let mut events = latest.events.clone();
+                        events.push(create_move_played_event(
+                            &timestamp,
+                            &actor,
+                            reasoning.as_ref(),
+                            move_details,
+                        ));
+                        events
+                    },
+                })
+            })
+            .await?;
         Arc::clone(self).queue_ai_seat_turn(updated.clone());
         Ok(updated)
     }
@@ -361,9 +355,6 @@ impl HumanAgentPlaygroundRuntime {
         session_id: &str,
         input: Value,
     ) -> Result<GameSession, RuntimeError> {
-        let session = self.get_session(session_id).await?;
-        let adapter = get_game_adapter(&session.game_id)
-            .map_err(|error| RuntimeError::not_found(error.to_string()))?;
         let actor = resolve_actor_context(
             &input,
             SessionActorContext {
@@ -372,43 +363,40 @@ impl HumanAgentPlaygroundRuntime {
                 actor_name: None,
             },
         );
-        let timestamp = now_iso();
-        let state = adapter
-            .create_initial_state()
-            .map_err(RuntimeError::internal)?;
-        let turn = read_session_turn(&state);
-        let status = read_session_status(&state);
+        let updated = self
+            .update_latest_session(session_id, |latest| {
+                let adapter = get_game_adapter(&latest.game_id)
+                    .map_err(|error| RuntimeError::not_found(error.to_string()))?;
+                let timestamp = now_iso();
+                let state = adapter
+                    .create_initial_state()
+                    .map_err(RuntimeError::internal)?;
+                let turn = read_session_turn(&state);
+                let status = read_session_status(&state);
 
-        let updated = GameSession {
-            id: session.id.clone(),
-            game_id: session.game_id.clone(),
-            created_at: session.created_at.clone(),
-            updated_at: timestamp.clone(),
-            state,
-            ai_seats: Some(reconcile_ai_seats(
-                normalize_ai_seats(&adapter.game().sides, session.ai_seats.as_ref()),
-                turn.as_deref(),
-                status.as_deref(),
-            )),
-            events: {
-                let mut events = session.events.clone();
-                events.push(create_session_reset_event(
-                    &timestamp,
-                    &actor,
-                    &adapter.game().short_name,
-                ));
-                events
-            },
-        };
-
-        {
-            let mut state = self.state.write().await;
-            state
-                .sessions
-                .insert(session_id.to_string(), updated.clone());
-        }
-        self.persist().await.map_err(RuntimeError::internal)?;
-        self.emit_session_update(&updated).await;
+                Ok(GameSession {
+                    id: latest.id.clone(),
+                    game_id: latest.game_id.clone(),
+                    created_at: latest.created_at.clone(),
+                    updated_at: timestamp.clone(),
+                    state,
+                    ai_seats: Some(reconcile_ai_seats(
+                        normalize_ai_seats(&adapter.game().sides, latest.ai_seats.as_ref()),
+                        turn.as_deref(),
+                        status.as_deref(),
+                    )),
+                    events: {
+                        let mut events = latest.events.clone();
+                        events.push(create_session_reset_event(
+                            &timestamp,
+                            &actor,
+                            &adapter.game().short_name,
+                        ));
+                        events
+                    },
+                })
+            })
+            .await?;
         Arc::clone(self).queue_ai_seat_turn(updated.clone());
         Ok(updated)
     }
@@ -623,58 +611,59 @@ impl HumanAgentPlaygroundRuntime {
             )));
         }
 
-        let mut current_seats =
-            normalize_ai_seats(&adapter.game().sides, session.ai_seats.as_ref());
-        let seat = current_seats
-            .get(side)
-            .cloned()
-            .unwrap_or_else(|| AiSeatConfig {
-                side: side.to_string(),
-                ..AiSeatConfig::default()
-            });
-        let merged = AiSeatConfig {
-            side: side.to_string(),
-            launcher: input.launcher.unwrap_or(seat.launcher),
-            enabled: input.enabled.unwrap_or(seat.enabled),
-            auto_play: input.auto_play.unwrap_or(seat.auto_play),
-            provider_profile_id: input.provider_profile_id.or(seat.provider_profile_id),
-            model: input.model.or(seat.model),
-            prompt_override: input.prompt_override.or(seat.prompt_override),
-            timeout_ms: input.timeout_ms.unwrap_or(seat.timeout_ms),
-            status: seat.status,
-            last_error: seat.last_error,
-            runtime_source: seat.runtime_source,
-        };
-        if merged.enabled && merged.model.as_deref().unwrap_or_default().is_empty() {
-            return Err(RuntimeError::bad_request(
-                "Enabled AI seats must select a model",
-            ));
-        }
+        let updated = self
+            .update_latest_session(session_id, |latest| {
+                let adapter = get_game_adapter(&latest.game_id)
+                    .map_err(|error| RuntimeError::not_found(error.to_string()))?;
+                let mut current_seats =
+                    normalize_ai_seats(&adapter.game().sides, latest.ai_seats.as_ref());
+                let seat = current_seats
+                    .get(side)
+                    .cloned()
+                    .unwrap_or_else(|| AiSeatConfig {
+                        side: side.to_string(),
+                        ..AiSeatConfig::default()
+                    });
+                let merged = AiSeatConfig {
+                    side: side.to_string(),
+                    launcher: input.launcher.unwrap_or(seat.launcher),
+                    enabled: input.enabled.unwrap_or(seat.enabled),
+                    auto_play: input.auto_play.unwrap_or(seat.auto_play),
+                    provider_profile_id: input
+                        .provider_profile_id
+                        .clone()
+                        .or(seat.provider_profile_id),
+                    model: input.model.clone().or(seat.model),
+                    prompt_override: input.prompt_override.clone().or(seat.prompt_override),
+                    timeout_ms: input.timeout_ms.unwrap_or(seat.timeout_ms),
+                    status: seat.status,
+                    last_error: seat.last_error,
+                    runtime_source: seat.runtime_source,
+                };
+                if merged.enabled && merged.model.as_deref().unwrap_or_default().is_empty() {
+                    return Err(RuntimeError::bad_request(
+                        "Enabled AI seats must select a model",
+                    ));
+                }
 
-        current_seats.insert(side.to_string(), merged);
-        let turn = read_session_turn(&session.state);
-        let status = read_session_status(&session.state);
-        let updated = GameSession {
-            id: session.id.clone(),
-            game_id: session.game_id.clone(),
-            created_at: session.created_at.clone(),
-            updated_at: now_iso(),
-            state: session.state.clone(),
-            events: session.events.clone(),
-            ai_seats: Some(reconcile_ai_seats(
-                current_seats,
-                turn.as_deref(),
-                status.as_deref(),
-            )),
-        };
-        {
-            let mut state = self.state.write().await;
-            state
-                .sessions
-                .insert(session_id.to_string(), updated.clone());
-        }
-        self.persist().await.map_err(RuntimeError::internal)?;
-        self.emit_session_update(&updated).await;
+                current_seats.insert(side.to_string(), merged);
+                let turn = read_session_turn(&latest.state);
+                let status = read_session_status(&latest.state);
+                Ok(GameSession {
+                    id: latest.id.clone(),
+                    game_id: latest.game_id.clone(),
+                    created_at: latest.created_at.clone(),
+                    updated_at: now_iso(),
+                    state: latest.state.clone(),
+                    events: latest.events.clone(),
+                    ai_seats: Some(reconcile_ai_seats(
+                        current_seats,
+                        turn.as_deref(),
+                        status.as_deref(),
+                    )),
+                })
+            })
+            .await?;
         Arc::clone(self).queue_ai_seat_turn(updated.clone());
         Ok(updated)
     }
@@ -685,29 +674,36 @@ impl HumanAgentPlaygroundRuntime {
         side: &str,
         input: UpdateAiSeatLauncherInput,
     ) -> Result<GameSession, RuntimeError> {
+        self.update_ai_seat_launchers(
+            session_id,
+            UpdateAiSeatLaunchersInput {
+                seats: HashMap::from([(side.to_string(), input)]),
+            },
+        )
+        .await
+    }
+
+    pub async fn update_ai_seat_launchers(
+        self: &Arc<Self>,
+        session_id: &str,
+        input: UpdateAiSeatLaunchersInput,
+    ) -> Result<GameSession, RuntimeError> {
         let session = self.get_session(session_id).await?;
         let adapter = get_game_adapter(&session.game_id)
             .map_err(|error| RuntimeError::not_found(error.to_string()))?;
-        if !adapter
-            .game()
-            .sides
-            .iter()
-            .any(|candidate| candidate == side)
-        {
-            return Err(
-                RuntimeError::bad_request(format!("Unsupported seat side: {side}"))
-                    .with_code("invalid_side")
-                    .with_detail("side", side.to_string()),
-            );
-        }
+        let mut resolved_updates = HashMap::new();
+        for (side, seat_input) in input.seats {
+            if !adapter.game().sides.iter().any(|candidate| candidate == &side) {
+                return Err(
+                    RuntimeError::bad_request(format!("Unsupported seat side: {side}"))
+                        .with_code("invalid_side")
+                        .with_detail("side", side),
+                );
+            }
 
-        let mut current_seats =
-            normalize_ai_seats(&adapter.game().sides, session.ai_seats.as_ref());
-        if input.launcher == AiLauncherId::Human {
-            current_seats.insert(
-                side.to_string(),
+            let seat = if seat_input.launcher == AiLauncherId::Human {
                 AiSeatConfig {
-                    side: side.to_string(),
+                    side: side.clone(),
                     launcher: AiLauncherId::Human,
                     enabled: false,
                     auto_play: false,
@@ -718,14 +714,11 @@ impl HumanAgentPlaygroundRuntime {
                     status: AiSeatStatus::Idle,
                     last_error: None,
                     runtime_source: None,
-                },
-            );
-        } else {
-            let resolved = self.resolve_launcher_seat_config(input).await?;
-            current_seats.insert(
-                side.to_string(),
+                }
+            } else {
+                let resolved = self.resolve_launcher_seat_config(seat_input).await?;
                 AiSeatConfig {
-                    side: side.to_string(),
+                    side: side.clone(),
                     launcher: resolved.launcher,
                     enabled: true,
                     auto_play: resolved.auto_play,
@@ -736,33 +729,39 @@ impl HumanAgentPlaygroundRuntime {
                     status: AiSeatStatus::Idle,
                     last_error: None,
                     runtime_source: Some("restflow-bridge".to_string()),
-                },
-            );
+                }
+            };
+            resolved_updates.insert(side, seat);
         }
 
-        let turn = read_session_turn(&session.state);
-        let status = read_session_status(&session.state);
-        let updated = GameSession {
-            id: session.id.clone(),
-            game_id: session.game_id.clone(),
-            created_at: session.created_at.clone(),
-            updated_at: now_iso(),
-            state: session.state.clone(),
-            events: session.events.clone(),
-            ai_seats: Some(reconcile_ai_seats(
-                current_seats,
-                turn.as_deref(),
-                status.as_deref(),
-            )),
-        };
-        {
-            let mut state = self.state.write().await;
-            state
-                .sessions
-                .insert(session_id.to_string(), updated.clone());
-        }
-        self.persist().await.map_err(RuntimeError::internal)?;
-        self.emit_session_update(&updated).await;
+        let updated = self
+            .update_latest_session(session_id, |latest| {
+                let adapter = get_game_adapter(&latest.game_id)
+                    .map_err(|error| RuntimeError::not_found(error.to_string()))?;
+                let mut current_seats =
+                    normalize_ai_seats(&adapter.game().sides, latest.ai_seats.as_ref());
+
+                for (side, seat) in &resolved_updates {
+                    current_seats.insert(side.clone(), seat.clone());
+                }
+
+                let turn = read_session_turn(&latest.state);
+                let status = read_session_status(&latest.state);
+                Ok(GameSession {
+                    id: latest.id.clone(),
+                    game_id: latest.game_id.clone(),
+                    created_at: latest.created_at.clone(),
+                    updated_at: now_iso(),
+                    state: latest.state.clone(),
+                    events: latest.events.clone(),
+                    ai_seats: Some(reconcile_ai_seats(
+                        current_seats,
+                        turn.as_deref(),
+                        status.as_deref(),
+                    )),
+                })
+            })
+            .await?;
         Arc::clone(self).queue_ai_seat_turn(updated.clone());
         Ok(updated)
     }
@@ -2379,6 +2378,159 @@ exit 1
             error
                 .message()
                 .contains("Claude Code is installed, but you are not signed in")
+        );
+
+        unsafe {
+            std::env::remove_var("RESTFLOW_CLAUDE_BIN");
+        }
+    }
+
+    #[tokio::test]
+    async fn updates_multiple_ai_seat_launchers_in_one_call() {
+        let _lock = claude_env_lock();
+        let script = write_test_claude_script(
+            "claude-ready-batch",
+            r#"#!/bin/sh
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  echo '{"loggedIn":true}'
+  exit 0
+fi
+echo '{"action":{"from":"e7","to":"e5"}}'
+"#,
+        );
+        unsafe {
+            std::env::set_var("RESTFLOW_CLAUDE_BIN", &script);
+        }
+
+        let runtime = HumanAgentPlaygroundRuntime::new(temp_runtime_config("batch-seat-launchers"))
+            .await
+            .unwrap();
+        let session = runtime
+            .create_session(CreateSessionInput {
+                game_id: "chess".to_string(),
+                ..CreateSessionInput::default()
+            })
+            .await
+            .unwrap();
+
+        let updated = runtime
+            .update_ai_seat_launchers(
+                &session.id,
+                UpdateAiSeatLaunchersInput {
+                    seats: HashMap::from([
+                        (
+                            "white".to_string(),
+                            UpdateAiSeatLauncherInput {
+                                launcher: AiLauncherId::Human,
+                                model: None,
+                                auto_play: None,
+                                advanced: None,
+                            },
+                        ),
+                        (
+                            "black".to_string(),
+                            UpdateAiSeatLauncherInput {
+                                launcher: AiLauncherId::ClaudeCode,
+                                model: Some("claude-code-sonnet".to_string()),
+                                auto_play: Some(true),
+                                advanced: None,
+                            },
+                        ),
+                    ]),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            updated
+                .ai_seats
+                .as_ref()
+                .and_then(|seats| seats.get("white"))
+                .map(|seat| (seat.launcher, seat.enabled)),
+            Some((AiLauncherId::Human, false))
+        );
+        assert_eq!(
+            updated
+                .ai_seats
+                .as_ref()
+                .and_then(|seats| seats.get("black"))
+                .and_then(|seat| seat.model.as_deref()),
+            Some("claude-code-sonnet")
+        );
+
+        unsafe {
+            std::env::remove_var("RESTFLOW_CLAUDE_BIN");
+        }
+    }
+
+    #[tokio::test]
+    async fn does_not_partially_apply_batch_launcher_updates_when_one_side_is_invalid() {
+        let _lock = claude_env_lock();
+        let script = write_test_claude_script(
+            "claude-ready-invalid-batch",
+            r#"#!/bin/sh
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  echo '{"loggedIn":true}'
+  exit 0
+fi
+echo '{"action":{"from":"e7","to":"e5"}}'
+"#,
+        );
+        unsafe {
+            std::env::set_var("RESTFLOW_CLAUDE_BIN", &script);
+        }
+
+        let runtime =
+            HumanAgentPlaygroundRuntime::new(temp_runtime_config("batch-seat-invalid"))
+                .await
+                .unwrap();
+        let session = runtime
+            .create_session(CreateSessionInput {
+                game_id: "chess".to_string(),
+                ..CreateSessionInput::default()
+            })
+            .await
+            .unwrap();
+
+        let error = runtime
+            .update_ai_seat_launchers(
+                &session.id,
+                UpdateAiSeatLaunchersInput {
+                    seats: HashMap::from([
+                        (
+                            "black".to_string(),
+                            UpdateAiSeatLauncherInput {
+                                launcher: AiLauncherId::ClaudeCode,
+                                model: Some("claude-code-sonnet".to_string()),
+                                auto_play: Some(true),
+                                advanced: None,
+                            },
+                        ),
+                        (
+                            "blue".to_string(),
+                            UpdateAiSeatLauncherInput {
+                                launcher: AiLauncherId::Human,
+                                model: None,
+                                auto_play: None,
+                                advanced: None,
+                            },
+                        ),
+                    ]),
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code(), Some("invalid_side"));
+        let latest = runtime.get_session(&session.id).await.unwrap();
+        assert_eq!(
+            latest
+                .ai_seats
+                .as_ref()
+                .and_then(|seats| seats.get("black"))
+                .map(|seat| (seat.launcher, seat.enabled)),
+            Some((AiLauncherId::Human, false))
         );
 
         unsafe {
