@@ -104,6 +104,9 @@ struct AiSeatRuntimeError {
     failure: AiSeatFailure,
 }
 
+const DEFAULT_PROVIDER_TIMEOUT_MS: u64 = 60_000;
+const DEFAULT_CLAUDE_CODE_TIMEOUT_MS: u64 = 120_000;
+
 impl std::fmt::Display for AiSeatRuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.failure.user_message)
@@ -693,7 +696,12 @@ impl HumanAgentPlaygroundRuntime {
             .map_err(|error| RuntimeError::not_found(error.to_string()))?;
         let mut resolved_updates = HashMap::new();
         for (side, seat_input) in input.seats {
-            if !adapter.game().sides.iter().any(|candidate| candidate == &side) {
+            if !adapter
+                .game()
+                .sides
+                .iter()
+                .any(|candidate| candidate == &side)
+            {
                 return Err(
                     RuntimeError::bad_request(format!("Unsupported seat side: {side}"))
                         .with_code("invalid_side")
@@ -1253,7 +1261,7 @@ impl HumanAgentPlaygroundRuntime {
             .advanced
             .as_ref()
             .and_then(|advanced| advanced.timeout_ms)
-            .unwrap_or(60_000);
+            .unwrap_or_else(|| default_timeout_ms_for_launcher(input.launcher));
         let auto_play = input.auto_play.unwrap_or(true);
 
         let resolve_model =
@@ -1614,7 +1622,7 @@ fn build_default_ai_seats(sides: &[String]) -> HashMap<String, AiSeatConfig> {
                     provider_profile_id: None,
                     model: None,
                     prompt_override: None,
-                    timeout_ms: 60_000,
+                    timeout_ms: DEFAULT_PROVIDER_TIMEOUT_MS,
                     status: AiSeatStatus::Idle,
                     last_error: None,
                     runtime_source: None,
@@ -1622,6 +1630,13 @@ fn build_default_ai_seats(sides: &[String]) -> HashMap<String, AiSeatConfig> {
             )
         })
         .collect()
+}
+
+fn default_timeout_ms_for_launcher(launcher: AiLauncherId) -> u64 {
+    match launcher {
+        AiLauncherId::ClaudeCode => DEFAULT_CLAUDE_CODE_TIMEOUT_MS,
+        _ => DEFAULT_PROVIDER_TIMEOUT_MS,
+    }
 }
 
 fn normalize_ai_seats(
@@ -2386,6 +2401,63 @@ exit 1
     }
 
     #[tokio::test]
+    async fn applies_extended_default_timeout_to_claude_code_launchers() {
+        let _lock = claude_env_lock();
+        let script = write_test_claude_script(
+            "claude-ready-timeout",
+            r#"#!/bin/sh
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  echo '{"loggedIn":true}'
+  exit 0
+fi
+echo '{"action":{"from":"e7","to":"e5"}}'
+"#,
+        );
+        unsafe {
+            std::env::set_var("RESTFLOW_CLAUDE_BIN", &script);
+        }
+
+        let runtime =
+            HumanAgentPlaygroundRuntime::new(temp_runtime_config("claude-timeout-default"))
+                .await
+                .unwrap();
+        let session = runtime
+            .create_session(CreateSessionInput {
+                game_id: "chess".to_string(),
+                ..CreateSessionInput::default()
+            })
+            .await
+            .unwrap();
+
+        let updated = runtime
+            .update_ai_seat_launcher(
+                &session.id,
+                "black",
+                UpdateAiSeatLauncherInput {
+                    launcher: AiLauncherId::ClaudeCode,
+                    model: Some("claude-code-sonnet".to_string()),
+                    auto_play: Some(true),
+                    advanced: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            updated
+                .ai_seats
+                .as_ref()
+                .and_then(|seats| seats.get("black"))
+                .map(|seat| seat.timeout_ms),
+            Some(120_000)
+        );
+
+        unsafe {
+            std::env::remove_var("RESTFLOW_CLAUDE_BIN");
+        }
+    }
+
+    #[tokio::test]
     async fn updates_multiple_ai_seat_launchers_in_one_call() {
         let _lock = claude_env_lock();
         let script = write_test_claude_script(
@@ -2481,10 +2553,9 @@ echo '{"action":{"from":"e7","to":"e5"}}'
             std::env::set_var("RESTFLOW_CLAUDE_BIN", &script);
         }
 
-        let runtime =
-            HumanAgentPlaygroundRuntime::new(temp_runtime_config("batch-seat-invalid"))
-                .await
-                .unwrap();
+        let runtime = HumanAgentPlaygroundRuntime::new(temp_runtime_config("batch-seat-invalid"))
+            .await
+            .unwrap();
         let session = runtime
             .create_session(CreateSessionInput {
                 game_id: "chess".to_string(),

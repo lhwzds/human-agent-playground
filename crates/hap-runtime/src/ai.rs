@@ -27,6 +27,9 @@ use crate::catalog::{
 use crate::error::RuntimeError;
 
 const RAW_RESPONSE_PREVIEW_LIMIT: usize = 400;
+const DEFAULT_PROVIDER_TIMEOUT_MS: u64 = 60_000;
+const DEFAULT_CLAUDE_CODE_TIMEOUT_MS: u64 = 120_000;
+const PROMPT_RECENT_EVENTS_LIMIT: usize = 6;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -117,31 +120,27 @@ impl CompletionExecutor {
         user_prompt: String,
         timeout_ms: u64,
     ) -> std::result::Result<restflow_ai::llm::CompletionResponse, DecisionFailure> {
-        match tokio::time::timeout(
-            std::time::Duration::from_millis(timeout_ms),
-            async {
-                match self {
-                    Self::Client(client) => client
-                        .complete(
-                            CompletionRequest::new(vec![
-                                Message::system(system_prompt),
-                                Message::user(user_prompt),
-                            ])
-                            .with_max_tokens(1200),
-                        )
-                        .await
-                        .map_err(|error| {
-                            DecisionFailure::provider_request_failed(format!(
-                                "Failed to complete turn decision: {error}"
-                            ))
-                        }),
-                    Self::ClaudeCodeCli { cli_model } => {
-                        complete_with_claude_code_cli(cli_model, &system_prompt, &user_prompt)
-                            .await
-                    }
+        match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
+            match self {
+                Self::Client(client) => client
+                    .complete(
+                        CompletionRequest::new(vec![
+                            Message::system(system_prompt),
+                            Message::user(user_prompt),
+                        ])
+                        .with_max_tokens(1200),
+                    )
+                    .await
+                    .map_err(|error| {
+                        DecisionFailure::provider_request_failed(format!(
+                            "Failed to complete turn decision: {error}"
+                        ))
+                    }),
+                Self::ClaudeCodeCli { cli_model } => {
+                    complete_with_claude_code_cli(cli_model, &system_prompt, &user_prompt).await
                 }
             }
-        )
+        })
         .await
         {
             Ok(result) => result,
@@ -373,7 +372,7 @@ async fn decide_turn_inner(
         &request.seat_side,
         request.seat_config.prompt_override.as_deref(),
     );
-    let timeout_ms = request.seat_config.timeout_ms.unwrap_or(60_000);
+    let timeout_ms = normalize_timeout_ms(model, request.seat_config.timeout_ms);
     let user_prompt = build_user_prompt(&request).map_err(|error| {
         DecisionFailure::provider_request_failed(format!(
             "Failed to build the turn decision prompt: {error}"
@@ -602,6 +601,7 @@ async fn complete_with_claude_code_cli(
     })?;
 
     let output = Command::new(executable)
+        .kill_on_drop(true)
         .arg("--print")
         .arg("--output-format")
         .arg("text")
@@ -657,14 +657,80 @@ fn build_system_prompt(game_id: &str, seat_side: &str, prompt_override: Option<&
 }
 
 fn build_user_prompt(request: &DecideTurnRequest) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&json!({
+    Ok(serde_json::to_string(&json!({
         "gameId": request.game_id,
         "sessionId": request.session_id,
         "seatSide": request.seat_side,
         "state": request.state,
         "legalMoves": request.legal_moves,
-        "recentEvents": request.recent_events,
+        "recentEvents": compact_recent_events_context(&request.recent_events),
     }))?)
+}
+
+fn compact_recent_events_context(recent_events: &Value) -> Value {
+    let Some(events) = recent_events.as_array() else {
+        return Value::Array(Vec::new());
+    };
+
+    let start = events.len().saturating_sub(PROMPT_RECENT_EVENTS_LIMIT);
+    Value::Array(
+        events[start..]
+            .iter()
+            .map(compact_session_event_context)
+            .collect(),
+    )
+}
+
+fn compact_session_event_context(event: &Value) -> Value {
+    let Some(object) = event.as_object() else {
+        return Value::Null;
+    };
+
+    let details = object
+        .get("details")
+        .and_then(Value::as_object)
+        .map(|details| {
+            let mut compact = serde_json::Map::new();
+            for key in [
+                "side",
+                "seatSide",
+                "from",
+                "to",
+                "notation",
+                "pieceDisplay",
+                "capturedDisplay",
+                "provider",
+                "model",
+                "error",
+                "errorCode",
+            ] {
+                if let Some(value) = details.get(key).cloned() {
+                    compact.insert(key.to_string(), value);
+                }
+            }
+            Value::Object(compact)
+        })
+        .unwrap_or(Value::Null);
+
+    json!({
+        "kind": object.get("kind").cloned().unwrap_or(Value::Null),
+        "summary": object.get("summary").cloned().unwrap_or(Value::Null),
+        "actorName": object.get("actorName").cloned().unwrap_or(Value::Null),
+        "channel": object.get("channel").cloned().unwrap_or(Value::Null),
+        "createdAt": object.get("createdAt").cloned().unwrap_or(Value::Null),
+        "details": details,
+    })
+}
+
+fn normalize_timeout_ms(model: AIModel, timeout_ms: Option<u64>) -> u64 {
+    match (model.is_claude_code(), timeout_ms) {
+        (true, Some(value)) if value == DEFAULT_PROVIDER_TIMEOUT_MS => {
+            DEFAULT_CLAUDE_CODE_TIMEOUT_MS
+        }
+        (true, None) => DEFAULT_CLAUDE_CODE_TIMEOUT_MS,
+        (_, Some(value)) => value,
+        _ => DEFAULT_PROVIDER_TIMEOUT_MS,
+    }
 }
 
 fn build_repair_system_prompt() -> String {
@@ -979,6 +1045,88 @@ mod tests {
     }
 
     #[test]
+    fn build_user_prompt_compacts_recent_events() {
+        let prompt = build_user_prompt(&DecideTurnRequest {
+            game_id: "xiangqi".to_string(),
+            session_id: "session-compact".to_string(),
+            seat_side: "red".to_string(),
+            state: json!({ "kind": "xiangqi", "turn": "red" }),
+            legal_moves: json!([{ "from": "c3", "to": "c7" }]),
+            recent_events: json!([
+                {
+                    "kind": "move_played",
+                    "summary": "black played c8 -> e7.",
+                    "actorName": "restflow-bridge",
+                    "channel": "system",
+                    "createdAt": "2026-03-29T23:21:01.017565+00:00",
+                    "details": {
+                        "from": "c8",
+                        "to": "e7",
+                        "notation": "c8e7",
+                        "pieceDisplay": "马",
+                        "provider": "openai",
+                        "model": "gpt-5.3-codex"
+                    },
+                    "reasoning": {
+                        "summary": "This should not be forwarded verbatim.",
+                        "reasoningSteps": ["A very long explanation."],
+                        "consideredAlternatives": [
+                            { "action": "e10e9", "summary": "Passive." }
+                        ]
+                    }
+                },
+                {
+                    "kind": "system_notice",
+                    "summary": "AI seat red stopped: the provider request failed",
+                    "actorName": "restflow-bridge",
+                    "channel": "system",
+                    "createdAt": "2026-03-29T23:22:01.030554+00:00",
+                    "details": {
+                        "side": "red",
+                        "error": "The AI provider request timed out after 60000ms",
+                        "errorCode": "provider_request_failed",
+                        "runtimeSource": "restflow-bridge"
+                    }
+                }
+            ]),
+            seat_config: SeatConfigInput {
+                provider_profile_id: None,
+                provider: Some("claude-code".to_string()),
+                model: "claude-code-sonnet".to_string(),
+                prompt_override: None,
+                timeout_ms: Some(60_000),
+            },
+        })
+        .unwrap();
+
+        let payload: Value = serde_json::from_str(&prompt).unwrap();
+        let recent_events = payload["recentEvents"].as_array().unwrap();
+        assert_eq!(recent_events.len(), 2);
+        assert!(recent_events[0].get("reasoning").is_none());
+        assert_eq!(recent_events[0]["details"]["from"], "c8");
+        assert_eq!(
+            recent_events[1]["details"]["errorCode"],
+            "provider_request_failed"
+        );
+    }
+
+    #[test]
+    fn extends_claude_code_timeout_for_legacy_default() {
+        assert_eq!(
+            normalize_timeout_ms(AIModel::ClaudeCodeSonnet, Some(60_000)),
+            120_000
+        );
+        assert_eq!(
+            normalize_timeout_ms(AIModel::ClaudeCodeSonnet, None),
+            120_000
+        );
+        assert_eq!(
+            normalize_timeout_ms(AIModel::Gpt5Codex, Some(60_000)),
+            60_000
+        );
+    }
+
+    #[test]
     fn injects_fallback_reasoning_when_the_model_omits_it() {
         let finalized = finalize_decision_response(
             RawDecisionResponse {
@@ -991,7 +1139,10 @@ mod tests {
 
         assert_eq!(finalized.action, Some(json!({ "from": "e7", "to": "e5" })));
         assert_eq!(
-            finalized.reasoning.as_ref().map(|reasoning| reasoning.summary.as_str()),
+            finalized
+                .reasoning
+                .as_ref()
+                .map(|reasoning| reasoning.summary.as_str()),
             Some("Selected a legal move for the current position.")
         );
         assert!(
@@ -1104,7 +1255,10 @@ echo '{"loggedIn":true}'
         )
         .await;
 
-        assert_eq!(result.error_code.as_deref(), Some("provider_request_failed"));
+        assert_eq!(
+            result.error_code.as_deref(),
+            Some("provider_request_failed")
+        );
         assert!(
             result
                 .error
