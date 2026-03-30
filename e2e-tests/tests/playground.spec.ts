@@ -597,7 +597,13 @@ test('auto-plays a black Chess seat through the Rust bridge after a human move',
     .toBeGreaterThan(2)
   await expect(page.getByText('Turn: white')).toBeVisible()
   await expect(messageFeedCard.locator('.message-feed-summary', { hasText: /restflow-bridge/i })).toBeVisible()
-  await expect(messageFeedCard.locator('.message-feed-summary', { hasText: /gpt-5/i })).toBeVisible()
+  await expect(
+    messageFeedCard.locator('.message-feed-summary', {
+      hasText: /restflow-bridge.*gpt-5.*(ms|s)/i,
+    }),
+  ).toBeVisible()
+  await messageFeedCard.getByText('Reasoning Summary').last().click()
+  await expect(messageFeedCard.getByText(/Time:\s+\d+(?:\.\d+)?(?:ms|s)/i)).toBeVisible()
 })
 
 test('creates a Gomoku session and reflects placed stones in real time', async ({ page, request }) => {

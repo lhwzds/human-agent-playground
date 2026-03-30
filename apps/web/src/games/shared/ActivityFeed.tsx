@@ -6,6 +6,7 @@ import { type ReactNode, useLayoutEffect, useMemo, useRef } from 'react'
 
 import {
   formatActorLabel,
+  formatEventDurationLabel,
   formatEventHeadline,
   formatEventSummary,
   formatRuntimeMeta,
@@ -82,6 +83,7 @@ function MessageFeedItem({
   const { language } = useI18n()
   const moveDetails = renderMoveDetails ? renderMoveDetails(language, event) : ''
   const runtimeMeta = formatRuntimeMeta(language, event)
+  const durationLabel = formatEventDurationLabel(language, event)
 
   return (
     <li className={`message-feed-item message-feed-item-${event.actorKind}`}>
@@ -93,13 +95,21 @@ function MessageFeedItem({
         <p className="message-feed-summary">{formatEventSummary(language, event, gameId)}</p>
         {moveDetails ? <p className="message-feed-summary">{moveDetails}</p> : null}
         {runtimeMeta ? <p className="message-feed-summary">{runtimeMeta}</p> : null}
-        {event.reasoning ? <ReasoningSummary explanation={event.reasoning} /> : null}
+        {event.reasoning ? (
+          <ReasoningSummary explanation={event.reasoning} durationLabel={durationLabel} />
+        ) : null}
       </article>
     </li>
   )
 }
 
-function ReasoningSummary({ explanation }: { explanation: DecisionExplanation }) {
+function ReasoningSummary({
+  explanation,
+  durationLabel,
+}: {
+  explanation: DecisionExplanation
+  durationLabel: string | null
+}) {
   const { t } = useI18n()
 
   return (
@@ -109,6 +119,7 @@ function ReasoningSummary({ explanation }: { explanation: DecisionExplanation })
       </summary>
       <div className="reasoning-summary-body">
         <p>{explanation.summary}</p>
+        {durationLabel ? <p className="reasoning-duration">{durationLabel}</p> : null}
 
         {explanation.reasoningSteps.length > 0 && (
           <ul className="reasoning-list">

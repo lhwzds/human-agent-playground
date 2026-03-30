@@ -1,5 +1,5 @@
 import type { SessionEvent } from '@human-agent-playground/core'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '../../../i18n'
@@ -78,5 +78,40 @@ describe('ActivityFeed', () => {
     )
 
     expect(scrollIntoViewMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('renders runtime duration in the feed and reasoning summary', () => {
+    Element.prototype.scrollIntoView = scrollIntoViewMock
+    const event = createMoveEvent('event-runtime')
+    event.actorKind = 'agent'
+    event.actorName = 'restflow-bridge'
+    event.channel = 'system'
+    event.details = {
+      ...event.details,
+      provider: 'anthropic',
+      model: 'claude-code-sonnet',
+      runtimeSource: 'restflow-bridge',
+      seatSide: 'white',
+      durationMs: 4250,
+    }
+    event.reasoning = {
+      summary: 'Play the classical central response.',
+      reasoningSteps: ['Contest the center immediately.'],
+      consideredAlternatives: [],
+      confidence: 0.81,
+    }
+
+    render(
+      <I18nProvider>
+        <ActivityFeed emptyText="No events yet." events={[event]} gameId="chess" />
+      </I18nProvider>,
+    )
+
+    expect(
+      screen.getByText(/restflow-bridge · white · anthropic \/ claude-code-sonnet · 4\.3s/i),
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Reasoning Summary'))
+    expect(screen.getByText('Time: 4.3s')).toBeInTheDocument()
   })
 })

@@ -105,7 +105,7 @@ struct AiSeatRuntimeError {
 }
 
 const DEFAULT_PROVIDER_TIMEOUT_MS: u64 = 60_000;
-const DEFAULT_CLAUDE_CODE_TIMEOUT_MS: u64 = 120_000;
+const DEFAULT_CLI_TIMEOUT_MS: u64 = 300_000;
 
 impl std::fmt::Display for AiSeatRuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -991,6 +991,7 @@ impl HumanAgentPlaygroundRuntime {
 
         let result = async {
             let legal_moves = self.get_legal_moves(session_id, None).await?;
+            let decision_started_at = std::time::Instant::now();
             let decision = decide_turn(
                 self.auth_manager.clone(),
                 DecideTurnRequest {
@@ -1056,7 +1057,13 @@ impl HumanAgentPlaygroundRuntime {
                 return Ok(());
             }
 
-            let input = build_ai_runtime_move_input(&action, &decision, side);
+            let decision_duration_ms = decision.duration_ms.unwrap_or_else(|| {
+                decision_started_at
+                    .elapsed()
+                    .as_millis()
+                    .min(u128::from(u64::MAX)) as u64
+            });
+            let input = build_ai_runtime_move_input(&action, &decision, side, decision_duration_ms);
             let _played = self.play_move(session_id, input).await?;
             let next_session = self.get_session(session_id).await?;
             if read_session_status(&next_session.state).as_deref() == Some("finished") {
@@ -1634,7 +1641,9 @@ fn build_default_ai_seats(sides: &[String]) -> HashMap<String, AiSeatConfig> {
 
 fn default_timeout_ms_for_launcher(launcher: AiLauncherId) -> u64 {
     match launcher {
-        AiLauncherId::ClaudeCode => DEFAULT_CLAUDE_CODE_TIMEOUT_MS,
+        AiLauncherId::Codex | AiLauncherId::ClaudeCode | AiLauncherId::Gemini => {
+            DEFAULT_CLI_TIMEOUT_MS
+        }
         _ => DEFAULT_PROVIDER_TIMEOUT_MS,
     }
 }
@@ -1853,6 +1862,10 @@ fn parse_ai_runtime_event_details(input: &Value) -> HashMap<String, Value> {
         (
             "runtimeSource",
             input.get("runtimeSource").cloned().unwrap_or(Value::Null),
+        ),
+        (
+            "durationMs",
+            input.get("durationMs").cloned().unwrap_or(Value::Null),
         ),
     ])
 }
@@ -2203,7 +2216,12 @@ fn runtime_provider_id_for_launcher(launcher: AiLauncherId) -> AiRuntimeProvider
     }
 }
 
-fn build_ai_runtime_move_input(action: &Value, decision: &DecideTurnResult, side: &str) -> Value {
+fn build_ai_runtime_move_input(
+    action: &Value,
+    decision: &DecideTurnResult,
+    side: &str,
+    duration_ms: u64,
+) -> Value {
     let mut normalized = normalize_ai_runtime_action(action);
     let mut object = normalized.as_object_mut().cloned().unwrap_or_default();
     object.insert("actorKind".to_string(), Value::String("agent".to_string()));
@@ -2225,6 +2243,7 @@ fn build_ai_runtime_move_input(action: &Value, decision: &DecideTurnResult, side
         object.insert("model".to_string(), Value::String(model));
     }
     object.insert("seatSide".to_string(), Value::String(side.to_string()));
+    object.insert("durationMs".to_string(), Value::from(duration_ms));
     object.insert(
         "runtimeSource".to_string(),
         Value::String("restflow-bridge".to_string()),
@@ -2449,12 +2468,42 @@ echo '{"action":{"from":"e7","to":"e5"}}'
                 .as_ref()
                 .and_then(|seats| seats.get("black"))
                 .map(|seat| seat.timeout_ms),
-            Some(120_000)
+            Some(300_000)
         );
 
         unsafe {
             std::env::remove_var("RESTFLOW_CLAUDE_BIN");
         }
+    }
+
+    #[test]
+    fn embeds_decision_duration_in_ai_runtime_move_input() {
+        let action = json!({ "from": "e7", "to": "e5" });
+        let decision = DecideTurnResult {
+            action: Some(action.clone()),
+            reasoning: Some(DecisionExplanation {
+                summary: "Contest the center.".to_string(),
+                reasoning_steps: vec!["Push the king pawn.".to_string()],
+                considered_alternatives: Vec::new(),
+                confidence: Some(0.82),
+            }),
+            usage: None,
+            model: Some("claude-code-sonnet".to_string()),
+            provider: Some("anthropic".to_string()),
+            error: None,
+            error_code: None,
+            raw_response_preview: None,
+            duration_ms: Some(4_250),
+        };
+
+        let payload = build_ai_runtime_move_input(&action, &decision, "black", 4_250);
+        assert_eq!(payload["durationMs"], 4_250);
+        assert_eq!(payload["seatSide"], "black");
+        assert_eq!(payload["provider"], "anthropic");
+        assert_eq!(
+            parse_ai_runtime_event_details(&payload).get("durationMs"),
+            Some(&Value::from(4_250))
+        );
     }
 
     #[tokio::test]

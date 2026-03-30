@@ -18,6 +18,7 @@ use std::future::Future;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::process::Command;
 use tracing::warn;
 
@@ -28,7 +29,8 @@ use crate::error::RuntimeError;
 
 const RAW_RESPONSE_PREVIEW_LIMIT: usize = 400;
 const DEFAULT_PROVIDER_TIMEOUT_MS: u64 = 60_000;
-const DEFAULT_CLAUDE_CODE_TIMEOUT_MS: u64 = 120_000;
+const DEFAULT_CLI_TIMEOUT_MS: u64 = 300_000;
+const LEGACY_CLAUDE_CODE_TIMEOUT_MS: u64 = 120_000;
 const PROMPT_RECENT_EVENTS_LIMIT: usize = 6;
 
 #[derive(Debug, Clone)]
@@ -81,6 +83,8 @@ pub struct DecideTurnResult {
     pub error_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_response_preview: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -336,6 +340,7 @@ pub async fn decide_turn(
             error: Some(error.message),
             error_code: Some(error.error_code.to_string()),
             raw_response_preview: error.raw_response_preview,
+            duration_ms: None,
         },
     }
 }
@@ -395,6 +400,7 @@ async fn decide_turn_inner(
         CompletionExecutor::Client(client)
     };
 
+    let started_at = Instant::now();
     let response = executor
         .complete(system_prompt, user_prompt, timeout_ms)
         .await?;
@@ -473,6 +479,7 @@ async fn decide_turn_inner(
         error: None,
         error_code: None,
         raw_response_preview: None,
+        duration_ms: Some(started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64),
     })
 }
 
@@ -527,6 +534,7 @@ fn mock_decide_turn(
         error: None,
         error_code: None,
         raw_response_preview: None,
+        duration_ms: Some(0),
     })
 }
 
@@ -723,14 +731,20 @@ fn compact_session_event_context(event: &Value) -> Value {
 }
 
 fn normalize_timeout_ms(model: AIModel, timeout_ms: Option<u64>) -> u64 {
-    match (model.is_claude_code(), timeout_ms) {
-        (true, Some(value)) if value == DEFAULT_PROVIDER_TIMEOUT_MS => {
-            DEFAULT_CLAUDE_CODE_TIMEOUT_MS
+    match (is_cli_model(model), timeout_ms) {
+        (true, Some(value))
+            if value == DEFAULT_PROVIDER_TIMEOUT_MS || value == LEGACY_CLAUDE_CODE_TIMEOUT_MS =>
+        {
+            DEFAULT_CLI_TIMEOUT_MS
         }
-        (true, None) => DEFAULT_CLAUDE_CODE_TIMEOUT_MS,
+        (true, None) => DEFAULT_CLI_TIMEOUT_MS,
         (_, Some(value)) => value,
         _ => DEFAULT_PROVIDER_TIMEOUT_MS,
     }
+}
+
+fn is_cli_model(model: AIModel) -> bool {
+    model.is_codex_cli() || model.is_claude_code() || model.is_gemini_cli()
 }
 
 fn build_repair_system_prompt() -> String {
@@ -1195,16 +1209,21 @@ mod tests {
     fn extends_claude_code_timeout_for_legacy_default() {
         assert_eq!(
             normalize_timeout_ms(AIModel::ClaudeCodeSonnet, Some(60_000)),
-            120_000
+            300_000
+        );
+        assert_eq!(
+            normalize_timeout_ms(AIModel::ClaudeCodeSonnet, Some(120_000)),
+            300_000
         );
         assert_eq!(
             normalize_timeout_ms(AIModel::ClaudeCodeSonnet, None),
-            120_000
+            300_000
         );
         assert_eq!(
             normalize_timeout_ms(AIModel::Gpt5Codex, Some(60_000)),
-            60_000
+            300_000
         );
+        assert_eq!(normalize_timeout_ms(AIModel::GeminiCli, None), 300_000);
     }
 
     #[test]
@@ -1290,6 +1309,7 @@ echo '{"loggedIn":true}'
 
         assert_eq!(result.action, Some(json!({ "from": "e7", "to": "e5" })));
         assert_eq!(result.error, None);
+        assert!(result.duration_ms.is_some());
 
         unsafe {
             std::env::remove_var("RESTFLOW_CLAUDE_BIN");

@@ -1720,6 +1720,11 @@
   margin: 0;
 }
 
+.reasoning-duration {
+  color: var(--ink-muted);
+  font-size: 0.82rem;
+}
+
 .reasoning-summary-trigger {
   display: flex;
   align-items: center;

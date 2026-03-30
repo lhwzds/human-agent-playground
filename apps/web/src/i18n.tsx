@@ -130,6 +130,9 @@ const translations = {
     'feed.confidence': 'Confidence: {value}',
     'feed.runtimeMeta': '{runtime} · {side} · {provider} / {model}',
     'feed.runtimeMetaNoSide': '{runtime} · {provider} / {model}',
+    'feed.runtimeMetaWithDuration': '{runtime} · {side} · {provider} / {model} · {duration}',
+    'feed.runtimeMetaNoSideWithDuration': '{runtime} · {provider} / {model} · {duration}',
+    'feed.duration': 'Time: {value}',
     'event.created': 'Created a new {gameName} session.',
     'event.reset': 'Reset the {gameName} session to the opening position.',
     'event.move.point': '{side} played {point}.',
@@ -277,6 +280,9 @@ const translations = {
     'feed.confidence': '置信度：{value}',
     'feed.runtimeMeta': '{runtime} · {side} · {provider} / {model}',
     'feed.runtimeMetaNoSide': '{runtime} · {provider} / {model}',
+    'feed.runtimeMetaWithDuration': '{runtime} · {side} · {provider} / {model} · {duration}',
+    'feed.runtimeMetaNoSideWithDuration': '{runtime} · {provider} / {model} · {duration}',
+    'feed.duration': '用时：{value}',
     'event.created': '已创建新的 {gameName} 对局。',
     'event.reset': '已将 {gameName} 对局重置为开局。',
     'event.move.point': '{side} 落子 {point}。',
@@ -521,6 +527,10 @@ export function formatRuntimeMeta(language: AppLanguage, event: SessionEvent) {
   const model = typeof event.details.model === 'string' ? event.details.model : null
   const runtime =
     typeof event.details.runtimeSource === 'string' ? event.details.runtimeSource : null
+  const duration =
+    typeof event.details.durationMs === 'number'
+      ? formatDurationMs(event.details.durationMs)
+      : null
   if (!provider || !model || !runtime) {
     return null
   }
@@ -531,17 +541,61 @@ export function formatRuntimeMeta(language: AppLanguage, event: SessionEvent) {
       : null
 
   if (side) {
-    return interpolate(translations[language]['feed.runtimeMeta'], {
-      runtime,
-      side,
-      provider,
-      model,
-    })
+    return interpolate(
+      translations[language][
+        duration ? 'feed.runtimeMetaWithDuration' : 'feed.runtimeMeta'
+      ],
+      {
+        runtime,
+        side,
+        provider,
+        model,
+        duration: duration ?? '',
+      },
+    )
   }
 
-  return interpolate(translations[language]['feed.runtimeMetaNoSide'], {
-    runtime,
-    provider,
-    model,
+  return interpolate(
+    translations[language][
+      duration ? 'feed.runtimeMetaNoSideWithDuration' : 'feed.runtimeMetaNoSide'
+    ],
+    {
+      runtime,
+      provider,
+      model,
+      duration: duration ?? '',
+    },
+  )
+}
+
+export function formatEventDurationLabel(language: AppLanguage, event: SessionEvent) {
+  if (typeof event.details.durationMs !== 'number') {
+    return null
+  }
+
+  const formattedDuration = formatDurationMs(event.details.durationMs)
+  if (!formattedDuration) {
+    return null
+  }
+
+  return interpolate(translations[language]['feed.duration'], {
+    value: formattedDuration,
   })
+}
+
+function formatDurationMs(durationMs: number) {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return null
+  }
+
+  if (durationMs < 1000) {
+    return `${Math.round(durationMs)}ms`
+  }
+
+  const seconds = durationMs / 1000
+  if (seconds < 10) {
+    return `${seconds.toFixed(1)}s`
+  }
+
+  return `${seconds.toFixed(0)}s`
 }
