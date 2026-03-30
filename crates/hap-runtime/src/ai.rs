@@ -354,7 +354,7 @@ async fn decide_turn_inner(
         .as_deref()
         == Some("1")
     {
-        return mock_decide_turn(request);
+        return mock_decide_turn(request).await;
     }
 
     let model = resolve_model(&request.seat_config.model)
@@ -483,9 +483,18 @@ async fn decide_turn_inner(
     })
 }
 
-fn mock_decide_turn(
+async fn mock_decide_turn(
     request: DecideTurnRequest,
 ) -> std::result::Result<DecideTurnResult, DecisionFailure> {
+    let delay_ms = std::env::var("HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_MOCK_DELAY_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    let started_at = Instant::now();
+    if delay_ms > 0 {
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+    }
+
     let action = request
         .legal_moves
         .as_array()
@@ -534,7 +543,7 @@ fn mock_decide_turn(
         error: None,
         error_code: None,
         raw_response_preview: None,
-        duration_ms: Some(0),
+        duration_ms: Some(started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64),
     })
 }
 

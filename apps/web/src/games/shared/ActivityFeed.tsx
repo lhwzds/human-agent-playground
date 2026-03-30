@@ -2,10 +2,11 @@ import type {
   DecisionExplanation,
   SessionEvent,
 } from '@human-agent-playground/core'
-import { type ReactNode, useLayoutEffect, useMemo, useRef } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import {
   formatActorLabel,
+  formatDurationMs,
   formatEventDurationLabel,
   formatEventHeadline,
   formatEventSummary,
@@ -68,6 +69,60 @@ export function ActivityFeed({
         </ol>
       )}
     </div>
+  )
+}
+
+export function PendingThinkingFeedItem({
+  launcherLabel,
+  sideLabel,
+  startedAt,
+}: {
+  launcherLabel: string
+  sideLabel: string
+  startedAt: string
+}) {
+  const { t } = useI18n()
+  const [elapsedMs, setElapsedMs] = useState(() => calculateElapsedMs(startedAt))
+
+  useEffect(() => {
+    setElapsedMs(calculateElapsedMs(startedAt))
+
+    const timer = window.setInterval(() => {
+      setElapsedMs(calculateElapsedMs(startedAt))
+    }, 1000)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [startedAt])
+
+  const duration = formatDurationMs(elapsedMs)
+  const summary = duration
+    ? t('ai.activity.thinkingWithDuration', {
+        side: sideLabel,
+        launcher: launcherLabel,
+        duration,
+      })
+    : t('ai.activity.thinking', {
+        side: sideLabel,
+        launcher: launcherLabel,
+      })
+
+  return (
+    <li
+      className="message-feed-item message-feed-item-system message-feed-item-pending"
+      role="status"
+      aria-live="polite"
+    >
+      <article className="message-feed-bubble">
+        <p className="message-feed-meta">restflow-bridge</p>
+        <strong>{t('ai.status.thinking')}</strong>
+        <p className="message-feed-summary message-feed-summary-pending">
+          <span className="message-feed-pending-dot" aria-hidden="true" />
+          <span>{summary}</span>
+        </p>
+      </article>
+    </li>
   )
 }
 
@@ -148,4 +203,13 @@ function ReasoningSummary({
       </div>
     </details>
   )
+}
+
+function calculateElapsedMs(startedAt: string) {
+  const startedAtMs = Date.parse(startedAt)
+  if (Number.isNaN(startedAtMs)) {
+    return 0
+  }
+
+  return Math.max(0, Date.now() - startedAtMs)
 }

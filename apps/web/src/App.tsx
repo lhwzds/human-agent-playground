@@ -45,6 +45,7 @@ import {
   I18nProvider,
   useI18n,
 } from './i18n'
+import { PendingThinkingFeedItem } from './games/shared/ActivityFeed'
 
 interface BootstrapPayload {
   games: GameCatalogItem[]
@@ -1345,25 +1346,11 @@ function AppContent() {
             }
             setupPanel={
               activeThinkingPlayer ? (
-                <li
-                  className="message-feed-item message-feed-item-system message-feed-item-pending"
-                  role="status"
-                  aria-live="polite"
-                >
-                  <article className="message-feed-bubble">
-                    <p className="message-feed-meta">restflow-bridge</p>
-                    <strong>{t('ai.status.thinking')}</strong>
-                    <p className="message-feed-summary message-feed-summary-pending">
-                      <span className="message-feed-pending-dot" aria-hidden="true" />
-                      <span>
-                        {t('ai.activity.thinking', {
-                          side: getSideLabel(language, activeThinkingPlayer.side),
-                          launcher: activeThinkingPlayer.launcherLabel,
-                        })}
-                      </span>
-                    </p>
-                  </article>
-                </li>
+                <PendingThinkingFeedItem
+                  launcherLabel={activeThinkingPlayer.launcherLabel}
+                  sideLabel={getSideLabel(language, activeThinkingPlayer.side)}
+                  startedAt={session.updatedAt}
+                />
               ) : null
             }
             onSessionUpdate={applySessionSnapshot}

@@ -1,9 +1,9 @@
 import type { SessionEvent } from '@human-agent-playground/core'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '../../../i18n'
-import { ActivityFeed } from '../ActivityFeed'
+import { ActivityFeed, PendingThinkingFeedItem } from '../ActivityFeed'
 
 const scrollIntoViewMock = vi.fn()
 const originalScrollIntoView = Element.prototype.scrollIntoView
@@ -26,9 +26,14 @@ function createMoveEvent(id: string): SessionEvent {
 }
 
 describe('ActivityFeed', () => {
+  beforeEach(() => {
+    vi.useRealTimers()
+  })
+
   afterEach(() => {
     Element.prototype.scrollIntoView = originalScrollIntoView
     scrollIntoViewMock.mockReset()
+    vi.useRealTimers()
   })
 
   it('scrolls to the newest message when events change', () => {
@@ -113,5 +118,36 @@ describe('ActivityFeed', () => {
 
     fireEvent.click(screen.getByText('Reasoning Summary'))
     expect(screen.getByText('Time: 4.3s')).toBeInTheDocument()
+  })
+
+  it('renders a live elapsed timer for the pending thinking item', () => {
+    Element.prototype.scrollIntoView = scrollIntoViewMock
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-29T12:00:05.000Z'))
+
+    render(
+      <I18nProvider>
+        <ActivityFeed
+          emptyText="No events yet."
+          events={[createMoveEvent('event-thinking')]}
+          gameId="chess"
+          pendingItem={
+            <PendingThinkingFeedItem
+              launcherLabel="Claude Code"
+              sideLabel="black"
+              startedAt="2026-03-29T12:00:00.000Z"
+            />
+          }
+        />
+      </I18nProvider>,
+    )
+
+    expect(screen.getByText(/black · Claude Code is thinking… · 5\.0s/i)).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+
+    expect(screen.getByText(/black · Claude Code is thinking… · 6\.0s/i)).toBeInTheDocument()
   })
 })

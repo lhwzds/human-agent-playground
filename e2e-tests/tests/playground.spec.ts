@@ -576,6 +576,10 @@ test('auto-plays a black Chess seat through the Rust bridge after a human move',
   await page.locator('[data-square="e4"]').click()
 
   await expect(messageFeedCard.getByText('e2 → e4')).toBeVisible()
+  await expect(blackPlayerChip).toContainText('thinking')
+  await expect
+    .poll(async () => await messageFeedCard.textContent(), { timeout: 10_000 })
+    .toMatch(/black · OpenAI API is thinking… · (?:\d+(?:\.\d+)?(?:ms|s))/i)
   await expect
     .poll(
       async () => {

@@ -25,6 +25,7 @@ export default defineConfig({
         HUMAN_AGENT_PLAYGROUND_AUTH_DATA_PATH:
           '../../.human-agent-playground-data/e2e-restflow.db',
         HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_FORCE_FIRST_LEGAL: '1',
+        HUMAN_AGENT_PLAYGROUND_AI_BRIDGE_MOCK_DELAY_MS: '3000',
       },
     },
     {

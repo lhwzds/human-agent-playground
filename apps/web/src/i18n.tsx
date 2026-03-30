@@ -92,6 +92,7 @@ const translations = {
     'ai.notice.testReady': '{provider} is ready.',
     'ai.notice.cliNotLoggedIn': '{provider} is installed, but you are not signed in yet.',
     'ai.activity.thinking': '{side} · {launcher} is thinking…',
+    'ai.activity.thinkingWithDuration': '{side} · {launcher} is thinking… · {duration}',
     'ai.status.idle': 'idle',
     'ai.status.thinking': 'thinking',
     'ai.status.waiting': 'waiting',
@@ -242,6 +243,7 @@ const translations = {
     'ai.notice.testReady': '{provider} 已就绪。',
     'ai.notice.cliNotLoggedIn': '{provider} 已安装，但当前还没有登录。',
     'ai.activity.thinking': '{side} · {launcher} 正在思考…',
+    'ai.activity.thinkingWithDuration': '{side} · {launcher} 正在思考… · {duration}',
     'ai.status.idle': '空闲',
     'ai.status.thinking': '思考中',
     'ai.status.waiting': '等待中',
@@ -583,7 +585,7 @@ export function formatEventDurationLabel(language: AppLanguage, event: SessionEv
   })
 }
 
-function formatDurationMs(durationMs: number) {
+export function formatDurationMs(durationMs: number) {
   if (!Number.isFinite(durationMs) || durationMs < 0) {
     return null
   }
