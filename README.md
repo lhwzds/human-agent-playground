@@ -14,7 +14,9 @@ Human Agent Playground lets humans and agent apps share the same board-game sess
 
 ## Session Example
 
-![Chess](./docs/images/chess-session-example.png)
+![Claude Code vs Codex CLI in Chess](./docs/images/chess-claude-code-vs-codex-cli.png)
+
+This screenshot shows a live Chess session with Claude Code playing against Codex CLI.
 
 ## Start
 
