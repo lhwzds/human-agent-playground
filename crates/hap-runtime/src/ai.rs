@@ -860,7 +860,22 @@ where
     Fut: Future<Output = std::result::Result<String, DecisionFailure>>,
 {
     match parse_decision_response(content) {
-        Ok(parsed) => return finalize_decision_response(parsed, content),
+        Ok(parsed) => match finalize_decision_response(parsed, content) {
+            Ok(parsed) => return Ok(parsed),
+            Err(error) => {
+                warn!(
+                    provider = provider,
+                    model = model,
+                    session_id = %request.session_id,
+                    side = %request.seat_side,
+                    stage = "initial",
+                    error_code = error.error_code,
+                    error = %error.message,
+                    raw_response_preview = %make_raw_response_preview(content),
+                    "Failed to finalize the initial AI decision response"
+                );
+            }
+        },
         Err(error) => {
             warn!(
                 provider = provider,
@@ -877,7 +892,34 @@ where
 
     let repaired_content = repair(content.to_string()).await?;
     match parse_decision_response(&repaired_content) {
-        Ok(parsed) => finalize_decision_response(parsed, &repaired_content),
+        Ok(parsed) => match finalize_decision_response(parsed, &repaired_content) {
+            Ok(parsed) => Ok(parsed),
+            Err(error) => {
+                let preview = make_raw_response_preview(&repaired_content);
+                warn!(
+                    provider = provider,
+                    model = model,
+                    session_id = %request.session_id,
+                    side = %request.seat_side,
+                    stage = "repair",
+                    error_code = error.error_code,
+                    error = %error.message,
+                    raw_response_preview = %preview,
+                    "Failed to finalize the repaired AI decision response"
+                );
+                if error.error_code == "decision_missing_action" {
+                    Err(DecisionFailure::decision_missing_action(
+                        "The model response did not include an action.",
+                        Some(preview),
+                    ))
+                } else {
+                    Err(DecisionFailure::decision_parse_failed(
+                        "The model response could not be converted into a valid action.",
+                        Some(preview),
+                    ))
+                }
+            }
+        },
         Err(error) => {
             let preview = make_raw_response_preview(&repaired_content);
             warn!(
@@ -1042,6 +1084,45 @@ mod tests {
                 .map(|reasoning| reasoning.reasoning_steps.len()),
             Some(1)
         );
+    }
+
+    #[tokio::test]
+    async fn repairs_a_valid_json_response_that_is_missing_action() {
+        let request = DecideTurnRequest {
+            game_id: "chess".to_string(),
+            session_id: "session-missing-action".to_string(),
+            seat_side: "black".to_string(),
+            state: json!({}),
+            legal_moves: json!([
+                { "from": "e7", "to": "e5" },
+                { "from": "c7", "to": "c5" }
+            ]),
+            recent_events: json!([]),
+            seat_config: SeatConfigInput {
+                provider_profile_id: None,
+                provider: Some("codex-cli".to_string()),
+                model: "codex-mini-latest".to_string(),
+                prompt_override: None,
+                timeout_ms: Some(60_000),
+            },
+        };
+
+        let repaired = parse_or_repair_decision_response(
+            "{\"reasoning\":{\"summary\":\"Fight for the center.\",\"reasoningSteps\":[\"e5 is principled.\"],\"consideredAlternatives\":[]}}",
+            &request,
+            "codex-cli",
+            "codex-mini-latest",
+            |_raw| async {
+                Ok(
+                    "{\"action\":{\"from\":\"e7\",\"to\":\"e5\"},\"reasoning\":{\"summary\":\"Contest the center.\",\"reasoningSteps\":[\"e5 claims central space.\"],\"consideredAlternatives\":[]}}"
+                        .to_string(),
+                )
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(repaired.action, Some(json!({ "from": "e7", "to": "e5" })));
     }
 
     #[test]
